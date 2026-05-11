@@ -1,0 +1,96 @@
+<UserControl x:Class="Focale.NINA.Plugin.Ui.FocaleOptionsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="650" d:DesignWidth="700">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="12">
+        <StackPanel>
+
+            <TextBlock FontWeight="Bold" FontSize="16" Margin="0,0,0,8" Text="Focale" />
+            <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
+                       Text="Bridges N.I.N.A. to Focale. Pushes metadata snapshots and uploads captured FITS frames automatically." />
+
+            <!-- Server -->
+            <GroupBox Header="Server" Margin="0,0,0,8">
+                <StackPanel Margin="8">
+                    <TextBlock Text="API URL" />
+                    <TextBox Text="{Binding ServerUrl, UpdateSourceTrigger=LostFocus}" />
+                    <TextBlock Margin="0,4,0,0" FontStyle="Italic" Foreground="Gray"
+                               Text="Default: https://api.focale.space — same backend as api.arcsecond.io" />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Sign-in -->
+            <GroupBox Header="Sign in" Margin="0,0,0,8">
+                <StackPanel Margin="8">
+                    <!-- When NOT signed in: show credential entry -->
+                    <StackPanel Visibility="{Binding IsSignedIn, Converter={StaticResource InverseBooleanToVisibilityConverter}, FallbackValue=Visible}">
+                        <TextBlock Text="Username or email" />
+                        <TextBox Text="{Binding UsernameEntry, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock Margin="0,4,0,0" Text="Password" />
+                        <PasswordBox x:Name="PasswordBoxControl" PasswordChanged="PasswordBoxControl_PasswordChanged" />
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="Sign in" Command="{Binding SignInCommand}" Margin="0,0,8,0" />
+                            <TextBlock VerticalAlignment="Center" Text="{Binding AuthStatus}" />
+                        </StackPanel>
+                        <TextBlock TextWrapping="Wrap" Margin="0,8,0,0" FontStyle="Italic" Foreground="Gray"
+                                   Text="The plugin authenticates with client_type=&quot;nina-plugin&quot;. Your refresh token is stored encrypted (Windows DPAPI, current-user scope); the access token lives in memory only and is refreshed automatically. Revoking the plugin from your account settings does not affect your web/desktop sessions." />
+                    </StackPanel>
+
+                    <!-- When signed in: show identity + sign-out -->
+                    <StackPanel Visibility="{Binding IsSignedIn, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                        <TextBlock>
+                            <Run Text="Signed in as " />
+                            <Run FontWeight="Bold" Text="{Binding SignedInAs, Mode=OneWay}" />
+                        </TextBlock>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="Sign out" Command="{Binding SignOutCommand}" Margin="0,0,8,0" />
+                            <TextBlock VerticalAlignment="Center" Text="{Binding AuthStatus}" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Features -->
+            <GroupBox Header="Features" Margin="0,0,0,8">
+                <StackPanel Margin="8">
+                    <CheckBox IsChecked="{Binding EnableFitsUpload}"
+                              Content="Automatically upload every saved FITS frame" />
+                    <CheckBox IsChecked="{Binding EnableMetadataSync}" Margin="0,4,0,0"
+                              Content="Push metadata snapshots on profile / device / sequence events" />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Queue -->
+            <GroupBox Header="Upload queue" Margin="0,0,0,8">
+                <StackPanel Margin="8">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Refresh" Command="{Binding RefreshQueueCommand}" Margin="0,0,8,0" />
+                        <TextBlock VerticalAlignment="Center"
+                                   Text="{Binding PendingCount, StringFormat='Pending: {0}'}" Margin="0,0,12,0" />
+                        <TextBlock VerticalAlignment="Center"
+                                   Text="{Binding DeadCount, StringFormat='Dead: {0}'}" Margin="0,0,12,0" />
+                        <TextBlock VerticalAlignment="Center" Text="{Binding LastQueueRefreshLabel}" Foreground="Gray" />
+                    </StackPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Privacy -->
+            <GroupBox Header="Privacy">
+                <StackPanel Margin="8">
+                    <TextBlock TextWrapping="Wrap"
+                        Text="• Refresh token stored encrypted (Windows DPAPI, current-user scope). Access token in memory only." />
+                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
+                        Text="• HTTPS only; server certificate validated against the OS trust store. TLS verification is never disabled." />
+                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
+                        Text="• Before any payload is sent, fields whose name matches Password / ApiKey / Token / Secret / Credential / Auth / Bearer are redacted, and credentials embedded in URI fields are stripped." />
+                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
+                        Text="• Both upload and metadata sync have their own toggle. Nothing leaves your machine until you sign in and leave the toggles enabled." />
+                </StackPanel>
+            </GroupBox>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -1,0 +1,22 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System.Windows;assembly=PresentationFramework"
+                    xmlns:wpf="clr-namespace:System.Windows.Controls;assembly=PresentationFramework"
+                    xmlns:ui="clr-namespace:Focale.NINA.Plugin.Ui"
+                    xmlns:plugin="clr-namespace:Focale.NINA.Plugin">
+
+    <!-- Visibility converters used by FocaleOptionsView for the sign-in / sign-out swap. -->
+    <wpf:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    <ui:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+
+    <!--
+        PluginOptionsDataTemplateSelector resolves the options page by looking up
+        Application.Current.Resources["<PluginName>_Options"] (see
+        NINA/ViewModel/Plugins/PluginOptionsDataTemplateSelector.cs:31).
+        The plugin's Name comes from [AssemblyTitle("Focale")], so the key is "Focale_Options".
+    -->
+    <DataTemplate x:Key="Focale_Options" DataType="{x:Type plugin:FocalePlugin}">
+        <ui:FocaleOptionsView DataContext="{Binding OptionsViewModel}" />
+    </DataTemplate>
+
+</ResourceDictionary>

@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    permissions:
+      contents: write   # needed to create a GitHub Release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"      # e.g. v0.1.0.0
+          $v = $tag.TrimStart("v")
+          if ($v.Split('.').Count -ne 4) { throw "Tag must be vMAJOR.MINOR.PATCH.BUILD, got $tag" }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # The release build needs the NINA host DLLs to compile against. The job downloads
+      # them from a published NINA release zip; pin the URL via repo variable NINA_REF_URL
+      # (e.g. https://nighttime-imaging.eu/download/3.3.0/NINA-Setup-3.3.0.exe — actually
+      # an MSI/EXE; you'll need a script to extract DLLs). For the scaffold we fail loudly
+      # so the maintainer wires this up deliberately.
+      - name: Stage NINA reference assemblies
+        shell: pwsh
+        run: |
+          if (-not $env:NINA_REF_URL) {
+            throw "NINA_REF_URL is not set. Configure a repo variable / secret pointing to a zip of the NINA bin folder."
+          }
+          New-Item -ItemType Directory -Path lib/nina | Out-Null
+          Invoke-WebRequest -Uri $env:NINA_REF_URL -OutFile nina-bin.zip
+          Expand-Archive -Path nina-bin.zip -DestinationPath lib/nina -Force
+        env:
+          NINA_REF_URL: ${{ vars.NINA_REF_URL }}
+
+      - name: Build plugin
+        run: |
+          dotnet publish src/Focale.NINA.Plugin/Focale.NINA.Plugin.csproj `
+            -c Release `
+            -o artifacts/plugin
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          New-Item -ItemType Directory -Path artifacts | Out-Null
+          $zip = "artifacts/Focale.NINA.Plugin-$v.zip"
+          Compress-Archive -Path artifacts/plugin/* -DestinationPath $zip -Force
+
+      - name: Stamp manifest
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          ./scripts/build-manifest.ps1 -Version $v -ZipPath "artifacts/Focale.NINA.Plugin-$v.zip" -OutPath "artifacts/manifest.json"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/Focale.NINA.Plugin-${{ steps.ver.outputs.version }}.zip
+            artifacts/manifest.json
+          generate_release_notes: true
+          fail_on_unmatched_files: true

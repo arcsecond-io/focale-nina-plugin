@@ -1,0 +1,36 @@
+{
+  "Name": "Focale",
+  "Identifier": "9F4D2F1E-7C3A-4E5B-8B2D-1F7A6E9C0D5A",
+  "Version": {
+    "Major": "0",
+    "Minor": "1",
+    "Patch": "0",
+    "Build": "0"
+  },
+  "Author": "Cédric Foellmi / Arcsecond",
+  "Homepage": "https://focale.space",
+  "Repository": "https://github.com/arcsecond-io/focale-nina-plugin",
+  "License": "MPL-2.0",
+  "LicenseURL": "https://www.mozilla.org/en-US/MPL/2.0/",
+  "ChangelogURL": "https://github.com/arcsecond-io/focale-nina-plugin/releases",
+  "Tags": ["Focale", "Arcsecond", "Cloud", "Upload", "FITS", "Metadata"],
+  "MinimumApplicationVersion": {
+    "Major": "3",
+    "Minor": "3",
+    "Patch": "0",
+    "Build": "0"
+  },
+  "Descriptions": {
+    "ShortDescription": "Pushes NINA equipment & sequence metadata to Focale and uploads captured FITS frames automatically.",
+    "LongDescription": "Bridges N.I.N.A. to Focale (https://focale.space).\n\nTwo integrations:\n\n1. Metadata sync — event-driven JSON snapshots of the active equipment profile, the running sequencer tree, target list, device runtime state, and observatory/site info are pushed to Focale on profile changes, device connect/disconnect, sequence start/finish, slews and filter changes.\n\n2. Automatic FITS upload — every successfully saved FITS frame (with its full ImageMetaData) is uploaded to Focale in the background via a durable on-disk queue that survives network drops and app restarts.\n\nPrivacy: API key is stored DPAPI-encrypted at rest. Known secret-bearing fields (Astrometry/PinPoint API keys, anything matching Password/ApiKey/Token/Secret/Credential) are redacted before any payload is sent. Both upload and metadata sync have their own toggle.",
+    "FeaturedImageURL": "https://focale.space/img/nina-plugin-featured.png",
+    "ScreenshotURL":    "https://focale.space/img/nina-plugin-screenshot-1.png",
+    "AltScreenshotURL": "https://focale.space/img/nina-plugin-screenshot-2.png"
+  },
+  "Installer": {
+    "URL":          "https://github.com/arcsecond-io/focale-nina-plugin/releases/download/v__VERSION__/Focale.NINA.Plugin-__VERSION__.zip",
+    "Checksum":     "__SHA256__",
+    "ChecksumType": "SHA256",
+    "Type":         "ARCHIVE"
+  }
+}
