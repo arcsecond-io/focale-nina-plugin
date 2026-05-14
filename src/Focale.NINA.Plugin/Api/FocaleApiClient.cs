@@ -64,7 +64,7 @@ public sealed class FocaleApiClient : IDisposable {
 
         var body = JsonConvert.SerializeObject(new LoginRequest { Username = username, Password = password });
         using var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
-        // Login goes through the same handler so the X-Arcsecond-Client header is set, but
+        // Login goes through the same handler so the X-Focale-Client header is set, but
         // there's no Authorization header yet — that's fine.
         using var resp = await _http.PostAsync(BuildUri(FocaleEndpoints.Login), content, ct).ConfigureAwait(false);
         await EnsureSuccessAsync(resp).ConfigureAwait(false);

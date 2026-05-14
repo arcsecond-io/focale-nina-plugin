@@ -23,7 +23,7 @@ public sealed class FocaleSettings {
 
     public const string DefaultServerUrl = "https://api.focale.space";
 
-    /// <summary>Sent in every request as <c>X-Arcsecond-Client</c> header and on login.</summary>
+    /// <summary>Sent in every request as <c>X-Focale-Client</c> header and on login.</summary>
     public const string ClientType = "nina-plugin";
 
     private readonly Guid _pluginId;

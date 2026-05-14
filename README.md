@@ -21,7 +21,7 @@ Pre-release scaffold. Not yet submitted to the NINA plugin registry. See [BUILD.
 ## Authentication & privacy
 
 - The plugin signs in with your Focale username + password and receives a JWT access/refresh pair. The access token lives in memory only and is auto-refreshed; the refresh token is the long-lived secret and is stored **encrypted at rest** using Windows DPAPI (`DataProtectionScope.CurrentUser`).
-- The plugin sends `X-Arcsecond-Client: nina-plugin` on every request. Server-side, that gives the plugin its own session bucket — revoking the plugin from your account settings does **not** affect your web/desktop sessions, and vice-versa.
+- The plugin sends `X-Focale-Client: nina-plugin` on every request. Server-side, that gives the plugin its own session bucket — revoking the plugin from your account settings does **not** affect your web/desktop sessions, and vice-versa.
 - All HTTPS calls use the .NET default TLS stack with certificate validation enabled. The plugin never disables TLS verification.
 - Before any profile/snapshot is sent, **secrets are redacted** by name (`Password`, `ApiKey`, `Token`, `Secret`, `Credential`, `Auth`, `Bearer`) plus an explicit list of known fields. Any new field NINA adds that matches one of these patterns will fail the unit test suite and force a deliberate review.
 - The plugin does not collect or send anything you have not enabled (FITS upload and metadata sync each have their own toggle).

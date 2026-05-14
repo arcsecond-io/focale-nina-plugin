@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial scaffold: PluginBase derivative, MEF DI wiring.
 - Settings layer with DPAPI-protected refresh token storage.
-- Focale API client with JWT Bearer auth (`X-Arcsecond-Client: nina-plugin`), automatic refresh-on-401.
+- Focale API client with JWT Bearer auth (`X-Focale-Client: nina-plugin`), automatic refresh-on-401.
 - **Per-night resource model** (local-noon-to-local-noon convention, see `NightDate`):
   one `NightLog` + two `Dataset`s (`NINA - YYYY-MM-DD - Observations` / ` - Calibrations`)
   created lazily on first need, with automatic roll-over.

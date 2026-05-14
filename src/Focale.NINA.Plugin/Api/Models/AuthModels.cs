@@ -7,7 +7,7 @@ public sealed class LoginRequest {
     [JsonProperty("password")] public string Password { get; set; } = "";
     /// <summary>
     /// arcsecond-back accepts the client type either via this body field or the
-    /// <c>X-Arcsecond-Client</c> header. We send both for robustness.
+    /// <c>X-Focale-Client</c> header. We send both for robustness.
     /// </summary>
     [JsonProperty("client")]   public string Client   { get; set; } = Settings.FocaleSettings.ClientType;
 }

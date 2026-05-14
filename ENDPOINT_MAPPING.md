@@ -24,7 +24,7 @@ For each night the plugin observes, three resources are created lazily, once, wi
 | Refresh | stored refresh token | `POST /auth/token/refresh/` |
 | Sign out | clears local + server | `POST /auth/logout/` |
 
-Every request carries `X-Arcsecond-Client: nina-plugin` and an `Authorization: Bearer <access>` header. Backend recognises the client type via the `NINA_PLUGIN_JWT_CLIENT_TYPE` constant in `accounts/jwt_tokens.py` (applied).
+Every request carries `X-Focale-Client: nina-plugin` and an `Authorization: Bearer <access>` header. Backend recognises the client type via the `NINA_PLUGIN_JWT_CLIENT_TYPE` constant in `accounts/jwt_tokens.py` (applied).
 
 ## FITS upload + per-frame typed records
 

@@ -8,9 +8,9 @@ using System.Resources;
 // Manifest fields read by NINA.Plugin.PluginBase.
 [assembly: AssemblyTitle("Focale")]
 [assembly: AssemblyDescription("Pushes NINA equipment & sequence metadata to Focale and uploads captured FITS frames automatically.")]
-[assembly: AssemblyCompany("Cédric Foellmi / Arcsecond")]
+[assembly: AssemblyCompany("Cédric Foellmi / Focale")]
 [assembly: AssemblyProduct("Focale.NINA.Plugin")]
-[assembly: AssemblyCopyright("Copyright © 2026 Cédric Foellmi / Arcsecond")]
+[assembly: AssemblyCopyright("Copyright © 2026 Cédric Foellmi / Focale")]
 
 // AssemblyVersion is read at runtime — bump on each release.
 [assembly: AssemblyVersion("0.1.0.0")]

@@ -10,7 +10,7 @@ namespace Focale.NINA.Plugin.Api;
 
 /// <summary>
 /// DelegatingHandler that:
-///   1. Always adds the <c>X-Arcsecond-Client: nina-plugin</c> header so the back-end
+///   1. Always adds the <c>X-Focale-Client: nina-plugin</c> header so the back-end
 ///      assigns this client to its own session bucket (separate from web/desktop).
 ///   2. Adds <c>Authorization: Bearer &lt;access&gt;</c> when an access token is cached.
 ///   3. On a 401 with a non-empty refresh token, runs the refresh delegate exactly once
@@ -54,8 +54,8 @@ internal sealed class AuthHandler : DelegatingHandler {
     }
 
     private void ApplyHeaders(HttpRequestMessage request) {
-        request.Headers.Remove("X-Arcsecond-Client");
-        request.Headers.TryAddWithoutValidation("X-Arcsecond-Client", FocaleSettings.ClientType);
+        request.Headers.Remove("X-Focale-Client");
+        request.Headers.TryAddWithoutValidation("X-Focale-Client", FocaleSettings.ClientType);
 
         var access = _tokens.GetAccess();
         if (!string.IsNullOrEmpty(access)) {
