@@ -31,6 +31,11 @@ public sealed class UploadQueue : IDisposable {
             await _conn.OpenAsync(ct).ConfigureAwait(false);
 
             using var cmd = _conn.CreateCommand();
+            // NOTE: the `image_type`, `target_name`, `exposure_seconds`, and
+            // `position_angle` columns from earlier plugin versions are no
+            // longer written. The backend reads them from the FITS header on
+            // auto-ingest. Existing upgraded DBs may still carry those
+            // columns — SQLite is tolerant; we just stop touching them.
             cmd.CommandText = """
                 PRAGMA journal_mode = WAL;
                 PRAGMA synchronous  = NORMAL;
@@ -41,10 +46,6 @@ public sealed class UploadQueue : IDisposable {
                     sha256          TEXT    NOT NULL,
                     capture_local   TEXT    NOT NULL,
                     frame_class     INTEGER NOT NULL DEFAULT 0,
-                    image_type      TEXT    NOT NULL DEFAULT '',
-                    target_name     TEXT    NOT NULL DEFAULT '',
-                    exposure_seconds REAL   NOT NULL DEFAULT 0,
-                    position_angle  REAL    NULL,
                     enqueued_at_utc TEXT    NOT NULL,
                     not_before_utc  TEXT    NOT NULL,
                     attempt         INTEGER NOT NULL DEFAULT 0,
@@ -74,9 +75,8 @@ public sealed class UploadQueue : IDisposable {
             using var cmd = _conn!.CreateCommand();
             cmd.CommandText = """
                 INSERT INTO upload_jobs (local_path, sha256, capture_local, frame_class,
-                                         image_type, target_name, exposure_seconds, position_angle,
                                          enqueued_at_utc, not_before_utc, attempt, status)
-                VALUES ($lp, $sh, $cl, $fc, $it, $tn, $es, $pa, $en, $nb, 0, 0)
+                VALUES ($lp, $sh, $cl, $fc, $en, $nb, 0, 0)
                 ON CONFLICT(sha256) DO NOTHING;
                 SELECT id FROM upload_jobs WHERE sha256 = $sh;
                 """;
@@ -84,10 +84,6 @@ public sealed class UploadQueue : IDisposable {
             cmd.Parameters.AddWithValue("$sh", job.Sha256);
             cmd.Parameters.AddWithValue("$cl", job.CaptureLocal.ToString("O"));
             cmd.Parameters.AddWithValue("$fc", (int)job.FrameClass);
-            cmd.Parameters.AddWithValue("$it", job.ImageType ?? string.Empty);
-            cmd.Parameters.AddWithValue("$tn", job.TargetName ?? string.Empty);
-            cmd.Parameters.AddWithValue("$es", job.ExposureSeconds);
-            cmd.Parameters.AddWithValue("$pa", (object?)job.PositionAngleDegrees ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$en", job.EnqueuedAtUtc.ToString("O"));
             cmd.Parameters.AddWithValue("$nb", job.NotBeforeUtc.ToString("O"));
             var id = Convert.ToInt64(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false));
@@ -109,7 +105,6 @@ public sealed class UploadQueue : IDisposable {
             sel.Transaction = tx;
             sel.CommandText = """
                 SELECT id, local_path, sha256, capture_local, frame_class,
-                       image_type, target_name, exposure_seconds, position_angle,
                        enqueued_at_utc, not_before_utc, attempt, status, last_error
                   FROM upload_jobs
                  WHERE status = 0 AND not_before_utc <= $now
@@ -192,7 +187,6 @@ public sealed class UploadQueue : IDisposable {
             using var cmd = _conn!.CreateCommand();
             cmd.CommandText = """
                 SELECT id, local_path, sha256, capture_local, frame_class,
-                       image_type, target_name, exposure_seconds, position_angle,
                        enqueued_at_utc, not_before_utc, attempt, status, last_error
                   FROM upload_jobs WHERE status = 3 ORDER BY id DESC LIMIT $l;
                 """;
@@ -208,20 +202,16 @@ public sealed class UploadQueue : IDisposable {
 
     private static UploadJob Read(Microsoft.Data.Sqlite.SqliteDataReader r) {
         return new UploadJob {
-            Id                   = r.GetInt64(0),
-            LocalPath            = r.GetString(1),
-            Sha256               = r.GetString(2),
-            CaptureLocal         = DateTime.Parse(r.GetString(3), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            FrameClass           = (FrameClass)r.GetInt32(4),
-            ImageType            = r.IsDBNull(5) ? "" : r.GetString(5),
-            TargetName           = r.IsDBNull(6) ? "" : r.GetString(6),
-            ExposureSeconds      = r.IsDBNull(7) ? 0  : r.GetDouble(7),
-            PositionAngleDegrees = r.IsDBNull(8) ? null : (double?)r.GetDouble(8),
-            EnqueuedAtUtc        = DateTime.Parse(r.GetString(9),  null, System.Globalization.DateTimeStyles.RoundtripKind),
-            NotBeforeUtc         = DateTime.Parse(r.GetString(10), null, System.Globalization.DateTimeStyles.RoundtripKind),
-            Attempt              = r.GetInt32(11),
-            Status               = (UploadJobStatus)r.GetInt32(12),
-            LastError            = r.IsDBNull(13) ? null : r.GetString(13),
+            Id            = r.GetInt64(0),
+            LocalPath     = r.GetString(1),
+            Sha256        = r.GetString(2),
+            CaptureLocal  = DateTime.Parse(r.GetString(3), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            FrameClass    = (FrameClass)r.GetInt32(4),
+            EnqueuedAtUtc = DateTime.Parse(r.GetString(5), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            NotBeforeUtc  = DateTime.Parse(r.GetString(6), null, System.Globalization.DateTimeStyles.RoundtripKind),
+            Attempt       = r.GetInt32(7),
+            Status        = (UploadJobStatus)r.GetInt32(8),
+            LastError     = r.IsDBNull(9) ? null : r.GetString(9),
         };
     }
 

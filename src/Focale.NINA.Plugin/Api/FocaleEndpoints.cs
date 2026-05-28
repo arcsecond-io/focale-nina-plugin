@@ -29,18 +29,13 @@ public static class FocaleEndpoints {
     public const string NightLog         = "/observingruns/nightlogs/{0}/";
 
     // --- File upload (datasets/urls.py) ---
-    /// <summary>POST: create a Dataset container (one per night per classification).</summary>
-    public const string Datasets         = "/datasets/";
-    /// <summary>POST {uuid}: register a DataFile + receive a presigned upload URL.</summary>
-    public const string DatasetFiles     = "/datasets/{0}/datafiles/";
-
-    // --- Targets (targets/urls.py) ---
-    public const string Targets         = "/targets/";
-    public const string TargetDetail    = "/targets/{0}/";
-
-    // --- Per-frame records (observingruns/urls.py) ---
-    public const string NightLogObservationsList = "/observingruns/nightlogs/{0}/observations/";
-    public const string NightLogCalibrationsList = "/observingruns/nightlogs/{0}/calibrations/";
+    /// <summary>POST: auto-ingest endpoint. Multipart with `auto_ingest=true` +
+    /// `persist_file=true` + `source=observer_console` + `sha256=<hex>`. One
+    /// round-trip creates the DataFile, NightLog, Dataset, ObservingSite/
+    /// Telescope/Camera (from FITS header), Observation/Calibration, target
+    /// resolution, and pixel-metrics extraction. Replaces the previous
+    /// two-write flow (`/datasets/<uuid>/datafiles/` + per-frame record POST).</summary>
+    public const string DataFiles        = "/datafiles/";
 
     // --- Sequence push (observingsequences/urls.py) ---
     /// <summary>POST: create an ObservingSequence (one per NINA SequenceStarting event).</summary>

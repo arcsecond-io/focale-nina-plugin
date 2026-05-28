@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Threading;
@@ -7,37 +8,43 @@ using Focale.NINA.Plugin.Api;
 using Focale.NINA.Plugin.Settings;
 using NINA.Core.Utility;
 
-// Worker streams FITS via FocaleApiClient.UploadFileMultipartAsync to /datasets/{uuid}/datafiles/.
-// The dataset UUID is sourced from SessionLifecycle, which lazily creates a Dataset when the
-// user is signed in.
+// Worker streams each FITS to Focale via `POST /datafiles/?auto_ingest=true`.
+// The server reads the FITS header itself and creates the DataFile, NightLog,
+// Dataset, ObservingSite/Telescope/Camera, Observation/Calibration, and target
+// resolution in a single transaction — replacing the previous multi-write
+// flow that lived in SessionLifecycle + FramePublisher + TargetResolver.
 
 namespace Focale.NINA.Plugin.Upload;
 
 /// <summary>
-/// Drains the UploadQueue by streaming each FITS to Focale via the multipart endpoint.
-/// Concurrency is bounded by FocaleSettings.MaxParallelUpload (default 1) so we never
-/// saturate the user's uplink during imaging.
+/// Drains the UploadQueue by streaming each FITS to Focale via the auto-ingest
+/// multipart endpoint. Concurrency is bounded by FocaleSettings.MaxParallelUpload
+/// (default 1) so we never saturate the user's uplink during imaging.
 /// </summary>
 public sealed class UploadWorker : IDisposable {
     private const int MaxAttempts = 12;
     private static readonly TimeSpan IdlePoll = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// NightLog.Source value the backend stamps on rows created from this
+    /// upload path. NINA captures are live-at-the-console by definition, so
+    /// the resulting NightLog is attributed to `observer_console` rather
+    /// than the default `data_upload_ingestion` (which is for Focale Memory
+    /// drag-and-drop uploads from the web UI).
+    /// </summary>
+    private const string IngestSource = "observer_console";
+
     private readonly UploadQueue _queue;
     private readonly FocaleApiClient _api;
     private readonly FocaleSettings _settings;
-    private readonly SessionLifecycle _session;
-    private readonly FramePublisher _publisher;
 
     private CancellationTokenSource? _cts;
     private Task? _loop;
 
-    public UploadWorker(UploadQueue queue, FocaleApiClient api, FocaleSettings settings,
-                        SessionLifecycle session, FramePublisher publisher) {
-        _queue     = queue;
-        _api       = api;
-        _settings  = settings;
-        _session   = session;
-        _publisher = publisher;
+    public UploadWorker(UploadQueue queue, FocaleApiClient api, FocaleSettings settings) {
+        _queue    = queue;
+        _api      = api;
+        _settings = settings;
     }
 
     public void Start() {
@@ -97,40 +104,31 @@ public sealed class UploadWorker : IDisposable {
                 return;
             }
 
-            var datasetUuid = await _session.EnsureDatasetAsync(job.CaptureLocal, job.FrameClass, ct).ConfigureAwait(false);
-            if (string.IsNullOrEmpty(datasetUuid)) {
-                // Not authenticated yet (or backend rejected Dataset creation). Push the job back
-                // with a short delay so we don't burn CPU.
+            if (!_api.IsAuthenticated) {
+                // Not signed in yet. Push back with a short delay rather than
+                // burning a retry budget on a deterministic 401.
                 await _queue.MarkRetryAsync(job.Id, job.Attempt + 1,
                     DateTime.UtcNow + TimeSpan.FromSeconds(30),
-                    "no Dataset UUID yet (not signed in?)", CancellationToken.None).ConfigureAwait(false);
+                    "not signed in", CancellationToken.None).ConfigureAwait(false);
                 return;
             }
-            var path = string.Format(FocaleEndpoints.DatasetFiles, datasetUuid);
-            await _api.UploadFileMultipartAsync(path, fi, job.Sha256, ct).ConfigureAwait(false);
+
+            // Single-shot auto-ingest. The server reads the FITS header to
+            // derive everything: NightLog (with `source=observer_console`
+            // since this is live console capture), Dataset, ObservingSite,
+            // Telescope, Camera, Observation/Calibration, target, and pixel
+            // metrics. The sha256 doubles as idempotency key so retried
+            // uploads return the existing DataFile rather than duplicating.
+            var extraFields = new Dictionary<string, string> {
+                ["auto_ingest"]  = "true",
+                ["persist_file"] = "true",
+                ["source"]       = IngestSource,
+            };
+            await _api.UploadFileMultipartAsync(
+                FocaleEndpoints.DataFiles, fi, job.Sha256, ct, extraFields,
+            ).ConfigureAwait(false);
             await _queue.MarkDoneAsync(job.Id, CancellationToken.None).ConfigureAwait(false);
             Logger.Info($"Focale: uploaded {fi.Name} ({fi.Length} bytes, attempt {job.Attempt + 1})");
-
-            // Best-effort: create the matching Observation / Calibration row under the night's
-            // NightLog so the frame is reachable via typed FKs. Failures here are non-fatal:
-            // the DataFile is already on the server.
-            try {
-                var nightLogUuid = await _session.EnsureNightLogAsync(job.CaptureLocal, ct).ConfigureAwait(false);
-                if (!string.IsNullOrEmpty(nightLogUuid)) {
-                    var duration = TimeSpan.FromSeconds(Math.Max(0, job.ExposureSeconds));
-                    if (job.FrameClass == FrameClass.Observation) {
-                        await _publisher.PublishObservationAsync(
-                            nightLogUuid, fi.Name, job.CaptureLocal, duration,
-                            job.TargetName, job.PositionAngleDegrees, ct).ConfigureAwait(false);
-                    } else {
-                        await _publisher.PublishCalibrationAsync(
-                            nightLogUuid, fi.Name, job.CaptureLocal, duration,
-                            job.ImageType, ct).ConfigureAwait(false);
-                    }
-                }
-            } catch (Exception ex) {
-                Logger.Warning($"Focale: post-upload publish for {fi.Name} failed: {ex.Message}");
-            }
         } catch (FocaleApiException apiEx) when (!apiEx.IsRetryable) {
             await _queue.MarkDeadAsync(job.Id, apiEx.Message, CancellationToken.None).ConfigureAwait(false);
             Logger.Error($"Focale: job {job.Id} dead — {apiEx.Message}");

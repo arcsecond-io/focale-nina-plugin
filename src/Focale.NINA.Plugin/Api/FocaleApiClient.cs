@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -167,20 +168,25 @@ public sealed class FocaleApiClient : IDisposable {
     }
 
     /// <summary>
-    /// Multipart upload of a single FITS file plus an idempotency key.
+    /// Multipart upload of a single FITS file plus an idempotency key, with
+    /// optional extra string form fields (used by the auto-ingest endpoint to
+    /// carry `auto_ingest`, `persist_file`, `source`, …).
     ///
     /// We deliberately do NOT send a separate <c>metadata</c> JSON part: NINA writes ~70 FITS
-    /// header keywords (NINA.Image/FileFormat/FITS/CFitsioFITS.cs:98-392) and the arcsecond-back
-    /// Celery pipeline already extracts them into <c>DataFile.pixel_metrics</c>. Sending a
-    /// duplicate JSON would just be a second source of truth.
+    /// header keywords (NINA.Image/FileFormat/FITS/CFitsioFITS.cs:98-392) and arcsecond-back's
+    /// auto-ingest pipeline extracts them server-side (DataFile.pixel_metrics +
+    /// Observation/Calibration creation + site/telescope/camera resolution).
+    /// Sending a duplicate JSON would just be a second source of truth.
     ///
-    /// The sha256 doubles as the idempotency key (server-side dedup of replays).
+    /// The sha256 doubles as the idempotency key — when the server sees a
+    /// repeat, it returns the existing DataFile and skips re-ingestion.
     /// </summary>
     public async Task UploadFileMultipartAsync(
         string path,
         FileInfo file,
         string sha256Hex,
-        CancellationToken ct) {
+        CancellationToken ct,
+        IReadOnlyDictionary<string, string>? extraFields = null) {
         if (!file.Exists) throw new FileNotFoundException("FITS file missing at upload time", file.FullName);
 
         await using var stream = new FileStream(
@@ -197,6 +203,11 @@ public sealed class FocaleApiClient : IDisposable {
         form.Add(streamContent, "file", file.Name);
         form.Add(new StringContent(sha256Hex), "sha256");
         form.Add(new StringContent(sha256Hex), "idempotency_key");
+        if (extraFields is not null) {
+            foreach (var (k, v) in extraFields) {
+                form.Add(new StringContent(v), k);
+            }
+        }
 
         using var req = new HttpRequestMessage(HttpMethod.Post, BuildUri(path)) { Content = form };
         req.Headers.TryAddWithoutValidation("Idempotency-Key", sha256Hex);

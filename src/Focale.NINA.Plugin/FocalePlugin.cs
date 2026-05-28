@@ -37,8 +37,6 @@ public sealed class FocalePlugin : PluginBase {
     private FocaleSettings? _settings;
     private FocaleApiClient? _api;
     private SessionLifecycle? _session;
-    private TargetResolver? _targets;
-    private FramePublisher? _publisher;
     private UploadQueue? _queue;
     private UploadWorker? _worker;
     private SequenceSyncService? _sequenceSync;
@@ -78,11 +76,13 @@ public sealed class FocalePlugin : PluginBase {
     public override Task Initialize() {
         try {
             var pluginId = Guid.Parse(Identifier);
-            _settings  = new FocaleSettings(pluginId, _profileService.ActiveProfile.PluginSettings);
-            _api       = new FocaleApiClient(_settings);
-            _session   = new SessionLifecycle(_api);
-            _targets   = new TargetResolver(_api);
-            _publisher = new FramePublisher(_api, _targets);
+            _settings = new FocaleSettings(pluginId, _profileService.ActiveProfile.PluginSettings);
+            _api      = new FocaleApiClient(_settings);
+            // SessionLifecycle is kept solely so SequenceSyncService can lazily
+            // ensure the NightLog exists when a sequence starts. Frame upload
+            // no longer touches it — the auto-ingest endpoint resolves the
+            // NightLog itself from the FITS header.
+            _session  = new SessionLifecycle(_api);
 
             var dataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -91,7 +91,7 @@ public sealed class FocalePlugin : PluginBase {
             _queue = new UploadQueue(Path.Combine(dataDir, "queue.db"));
             _ = _queue.InitializeAsync();   // fire-and-forget; the worker tolerates startup races
 
-            _worker = new UploadWorker(_queue, _api, _settings, _session, _publisher);
+            _worker = new UploadWorker(_queue, _api, _settings);
             _worker.Start();
 
             _imageSaveMediator.ImageSaved += OnImageSaved;
@@ -123,22 +123,6 @@ public sealed class FocalePlugin : PluginBase {
         Logger.Info("Focale plugin torn down");
     }
 
-    /// <summary>
-    /// Picks the best-available rotator angle for the captured frame. Prefers the planned
-    /// target's PositionAngle (per-target framing) over the live rotator's MechanicalPosition
-    /// (which can drift). Both are written to FITS by NINA; we read them off the same
-    /// ImageMetaData to keep the value consistent with what's stamped in the headers.
-    /// </summary>
-    private static double? SafePositionAngle(ImageSavedEventArgs e) {
-        try {
-            var pa = e.MetaData?.Target?.PositionAngle;
-            if (pa is double d && !double.IsNaN(d)) return d;
-            var rot = e.MetaData?.Rotator?.Position;
-            if (rot is double r && !double.IsNaN(r)) return r;
-        } catch { /* best-effort */ }
-        return null;
-    }
-
     private async void OnImageSaved(object? sender, ImageSavedEventArgs e) {
         // Runs on the save-pipeline thread. Must not throw.
         try {
@@ -152,8 +136,10 @@ public sealed class FocalePlugin : PluginBase {
                 return;
             }
 
-            // Capture time comes from NINA's ImageMetaData (start of exposure).
-            // ExposureStart defaults to DateTime.MinValue when unset, so we fall back to "now".
+            // Capture time + frame classification are kept on the queue row for
+            // log readability and dead-letter triage. The server reads the
+            // authoritative DATE-OBS / IMAGETYP straight from the FITS header
+            // on auto-ingest, so these never leave the plugin.
             var captureLocal = DateTime.Now;
             try {
                 var ts = e.MetaData?.Image?.ExposureStart ?? DateTime.MinValue;
@@ -168,16 +154,12 @@ public sealed class FocalePlugin : PluginBase {
             var sha256 = await UploadWorker.ComputeSha256Async(fileInfo, CancellationToken.None).ConfigureAwait(false);
 
             var job = new UploadJob {
-                LocalPath            = fileInfo.FullName,
-                Sha256               = sha256,
-                CaptureLocal         = captureLocal,
-                FrameClass           = frameClass,
-                ImageType            = imageType,
-                TargetName           = e.MetaData?.Target?.Name ?? string.Empty,
-                ExposureSeconds      = e.Duration,
-                PositionAngleDegrees = SafePositionAngle(e),
-                EnqueuedAtUtc        = DateTime.UtcNow,
-                NotBeforeUtc         = DateTime.UtcNow,
+                LocalPath     = fileInfo.FullName,
+                Sha256        = sha256,
+                CaptureLocal  = captureLocal,
+                FrameClass    = frameClass,
+                EnqueuedAtUtc = DateTime.UtcNow,
+                NotBeforeUtc  = DateTime.UtcNow,
             };
             await _queue.EnqueueAsync(job).ConfigureAwait(false);
             Logger.Trace($"Focale: enqueued {frameClass} upload for {fileInfo.Name} (night {NightDate.Format(NightDate.FromLocal(captureLocal))})");

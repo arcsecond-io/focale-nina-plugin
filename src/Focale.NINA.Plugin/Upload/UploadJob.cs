@@ -15,21 +15,21 @@ public sealed class UploadJob {
     public string LocalPath { get; set; } = "";
     public string Sha256 { get; set; } = "";
 
-    /// <summary>Local capture time (from <c>ImageMetaData.Image.ExposureStart</c>). Used by SessionLifecycle to pick the correct night-date.</summary>
+    /// <summary>
+    /// Local capture time (from <c>ImageMetaData.Image.ExposureStart</c>). The
+    /// backend reads the canonical DATE-OBS from the FITS header — this field
+    /// is purely diagnostic now, kept for queue / dead-letter introspection
+    /// and the friendly enqueue log line.
+    /// </summary>
     public DateTime CaptureLocal { get; set; }
 
-    /// <summary>Observations or Calibrations — picks which of the night's two Datasets the upload lands in.</summary>
+    /// <summary>
+    /// Observation / Calibration — derived client-side from <c>IMAGETYP</c>
+    /// for diagnostics & log filtering. The backend re-classifies from the
+    /// same header card (`_common.classify_from_header`) so the result is
+    /// authoritative there, not here.
+    /// </summary>
     public FrameClass FrameClass { get; set; }
-
-    /// <summary>Original NINA image type (LIGHT / DARK / BIAS / FLAT / …) — drives Calibration.type mapping.</summary>
-    public string ImageType { get; set; } = "";
-
-    /// <summary>Target name from NINA (used to find-or-create the XTarget). May be empty for calibrations.</summary>
-    public string TargetName { get; set; } = "";
-
-    public double ExposureSeconds { get; set; }
-
-    public double? PositionAngleDegrees { get; set; }
 
     public DateTime EnqueuedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime NotBeforeUtc { get; set; } = DateTime.UtcNow;
