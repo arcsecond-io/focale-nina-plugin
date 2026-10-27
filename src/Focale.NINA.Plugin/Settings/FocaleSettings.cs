@@ -18,8 +18,6 @@ public sealed class FocaleSettings {
     private const string KeyUsername              = "Auth.Username";
     private const string KeyServerUrl             = "Server.Url";
     private const string KeyEnableUpload          = "Feature.EnableFitsUpload";
-    private const string KeyEnableMetadata        = "Feature.EnableMetadataSync";
-    private const string KeyMaxParallelUpload     = "Upload.MaxParallel";
 
     public const string DefaultServerUrl = "https://api.focale.space";
 
@@ -44,16 +42,6 @@ public sealed class FocaleSettings {
     public bool EnableFitsUpload {
         get => !_store.TryGetValue(_pluginId, KeyEnableUpload, out bool v) || v;  // default true
         set => _store.SetValue(_pluginId, KeyEnableUpload, value);
-    }
-
-    public bool EnableMetadataSync {
-        get => !_store.TryGetValue(_pluginId, KeyEnableMetadata, out bool v) || v;  // default true
-        set => _store.SetValue(_pluginId, KeyEnableMetadata, value);
-    }
-
-    public int MaxParallelUpload {
-        get => _store.TryGetValue(_pluginId, KeyMaxParallelUpload, out int v) && v > 0 ? v : 1;
-        set => _store.SetValue(_pluginId, KeyMaxParallelUpload, Math.Clamp(value, 1, 8));
     }
 
     public string? Username {

@@ -132,6 +132,7 @@ public sealed class UploadQueue : IDisposable {
             await upd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
             await tx.CommitAsync(ct).ConfigureAwait(false);
+            job.Status = UploadJobStatus.Working;
             return job;
         } finally {
             _mutex.Release();

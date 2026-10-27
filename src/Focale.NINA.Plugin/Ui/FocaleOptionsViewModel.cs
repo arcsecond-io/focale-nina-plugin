@@ -10,14 +10,14 @@ using NINA.Core.Utility;
 
 namespace Focale.NINA.Plugin.Ui;
 
-public sealed partial class FocaleOptionsViewModel : ObservableObject {
+public sealed partial class FocaleOptionsViewModel : ObservableObject, IDisposable {
     private readonly FocaleSettings _settings;
     private readonly FocaleApiClient _api;
     private readonly UploadQueue _queue;
+    private readonly UploadWorker _worker;
 
     [ObservableProperty] private string serverUrl              = FocaleSettings.DefaultServerUrl;
     [ObservableProperty] private bool   enableFitsUpload       = true;
-    [ObservableProperty] private bool   enableMetadataSync     = true;
 
     // Sign-in fields. Both are PasswordBox-bound via code-behind for the password.
     [ObservableProperty] private string usernameEntry          = "";
@@ -26,24 +26,47 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject {
     [ObservableProperty] private string signedInAs             = "";
     [ObservableProperty] private string authStatus             = "";
 
+    [ObservableProperty] private string uploadStatus           = "";
+    [ObservableProperty] private bool   isUploadPaused;
     [ObservableProperty] private int    pendingCount;
     [ObservableProperty] private int    deadCount;
     [ObservableProperty] private string lastQueueRefreshLabel  = "";
 
-    public FocaleOptionsViewModel(FocaleSettings settings, FocaleApiClient api, UploadQueue queue) {
+    public FocaleOptionsViewModel(FocaleSettings settings, FocaleApiClient api, UploadQueue queue, UploadWorker worker) {
         _settings          = settings;
         _api               = api;
         _queue             = queue;
+        _worker            = worker;
         ServerUrl          = _settings.ServerUrl;
         EnableFitsUpload   = _settings.EnableFitsUpload;
-        EnableMetadataSync = _settings.EnableMetadataSync;
         IsSignedIn         = _settings.HasRefreshToken();
         SignedInAs         = _settings.Username ?? "";
+        UpdateUploadStatus();
+        _worker.StateChanged += OnWorkerStateChanged;
     }
 
     partial void OnServerUrlChanged(string value)        => _settings.ServerUrl          = value?.Trim() ?? FocaleSettings.DefaultServerUrl;
-    partial void OnEnableFitsUploadChanged(bool value)   => _settings.EnableFitsUpload   = value;
-    partial void OnEnableMetadataSyncChanged(bool value) => _settings.EnableMetadataSync = value;
+    partial void OnEnableFitsUploadChanged(bool value) {
+        _settings.EnableFitsUpload = value;
+        _worker.Wake();
+    }
+
+    private void OnWorkerStateChanged(object? sender, EventArgs e) {
+        UpdateUploadStatus();
+        // A refresh token rejected in the background signs the user out: reflect it.
+        IsSignedIn = _settings.HasRefreshToken();
+        _ = RefreshQueueAsync();
+    }
+
+    private void UpdateUploadStatus() {
+        IsUploadPaused = _worker.State == UploadWorkerState.Paused;
+        UploadStatus = _worker.State switch {
+            UploadWorkerState.Disabled  => "Automatic upload is off.",
+            UploadWorkerState.SignedOut => _worker.PauseMessage ?? "Signed out — frames wait in the queue.",
+            UploadWorkerState.Paused    => $"Paused: {_worker.PauseMessage} Retrying at {_worker.PausedUntilUtc?.ToLocalTime():HH:mm}.",
+            _                           => "Uploading.",
+        };
+    }
 
     [RelayCommand]
     private async Task SignInAsync() {
@@ -60,10 +83,12 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject {
             IsSignedIn    = _settings.HasRefreshToken();
             SignedInAs    = _settings.Username ?? UsernameEntry.Trim();
             AuthStatus    = $"Signed in as {SignedInAs}";
+            // Frames queued while signed out go up now, not at the next poll.
+            _worker.Wake();
         } catch (FocaleApiException ex) {
             PasswordEntry = "";
             AuthStatus    = $"Sign-in failed: {(int?)ex.StatusCode} {ex.Message}";
-            Logger.Warning("Focale: sign-in failed", ex);
+            Logger.Warning($"Focale: sign-in failed — {ex.Message}");
         } catch (Exception ex) {
             PasswordEntry = "";
             AuthStatus    = $"Sign-in failed: {ex.Message}";
@@ -80,8 +105,13 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject {
             IsSignedIn = false;
             SignedInAs = "";
             AuthStatus = "Signed out.";
+            _worker.Wake();
         }
     }
+
+    /// <summary>Lifts a plan/quota pause right away — e.g. after upgrading on focale.space.</summary>
+    [RelayCommand]
+    private void ResumeUploads() => _worker.Resume();
 
     [RelayCommand]
     private async Task RefreshQueueAsync() {
@@ -94,4 +124,6 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject {
             Logger.Error("Focale: RefreshQueue failed", ex);
         }
     }
+
+    public void Dispose() => _worker.StateChanged -= OnWorkerStateChanged;
 }

@@ -10,7 +10,7 @@
 
             <TextBlock FontWeight="Bold" FontSize="16" Margin="0,0,0,8" Text="Focale" />
             <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                       Text="Bridges N.I.N.A. to Focale. Pushes metadata snapshots and uploads captured FITS frames automatically." />
+                       Text="Bridges N.I.N.A. to Focale. Uploads every FITS or XISF frame NINA saves; Focale rebuilds your nights, targets and equipment from the file headers." />
 
             <!-- Server -->
             <GroupBox Header="Server" Margin="0,0,0,8">
@@ -57,15 +57,18 @@
             <GroupBox Header="Features" Margin="0,0,0,8">
                 <StackPanel Margin="8">
                     <CheckBox IsChecked="{Binding EnableFitsUpload}"
-                              Content="Automatically upload every saved FITS frame" />
-                    <CheckBox IsChecked="{Binding EnableMetadataSync}" Margin="0,4,0,0"
-                              Content="Push metadata snapshots on profile / device / sequence events" />
+                              Content="Automatically upload every saved FITS / XISF frame" />
                 </StackPanel>
             </GroupBox>
 
             <!-- Queue -->
             <GroupBox Header="Upload queue" Margin="0,0,0,8">
                 <StackPanel Margin="8">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding UploadStatus}" />
+                        <Button Content="Resume uploads" Command="{Binding ResumeUploadsCommand}" Margin="8,0,0,0"
+                                Visibility="{Binding IsUploadPaused, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}" />
+                    </StackPanel>
                     <StackPanel Orientation="Horizontal">
                         <Button Content="Refresh" Command="{Binding RefreshQueueCommand}" Margin="0,0,8,0" />
                         <TextBlock VerticalAlignment="Center"
@@ -85,9 +88,9 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
                         Text="• HTTPS only; server certificate validated against the OS trust store. TLS verification is never disabled." />
                     <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
-                        Text="• Before any payload is sent, fields whose name matches Password / ApiKey / Token / Secret / Credential / Auth / Bearer are redacted, and credentials embedded in URI fields are stripped." />
+                        Text="• Only saved FITS / XISF files are sent — no NINA profile, settings or logs. Nothing leaves your machine until you sign in and leave automatic upload enabled." />
                     <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
-                        Text="• Both upload and metadata sync have their own toggle. Nothing leaves your machine until you sign in and leave the toggles enabled." />
+                        Text="• Frames wait in the local queue while you are offline, signed out, or over a plan limit, and go up once that clears." />
                 </StackPanel>
             </GroupBox>
 

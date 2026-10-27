@@ -51,12 +51,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Plugin runtime dependencies. These DO ship inside the plugin folder. -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
-    <PackageReference Include="System.ComponentModel.Composition" Version="9.0.0" />
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <!-- Plugin runtime dependencies. These DO ship inside the plugin folder. Versions of the
+         ones NINA also uses (Newtonsoft.Json, MEF, CommunityToolkit.Mvvm) match NINA 3.3's, so the
+         plugin's [Export] attributes are the very types NINA's MEF container looks for. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <PackageReference Include="System.ComponentModel.Composition" Version="10.0.10" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
 
 </Project>

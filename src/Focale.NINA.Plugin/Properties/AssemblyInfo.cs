@@ -1,5 +1,7 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Resources;
 
 // Plugin identity. The Guid is the immutable plugin Identifier; never change it.
@@ -7,7 +9,7 @@ using System.Resources;
 
 // Manifest fields read by NINA.Plugin.PluginBase.
 [assembly: AssemblyTitle("Focale")]
-[assembly: AssemblyDescription("Pushes NINA equipment & sequence metadata to Focale and uploads captured FITS frames automatically.")]
+[assembly: AssemblyDescription("Uploads every FITS / XISF frame NINA saves to Focale, which rebuilds your nights, targets and equipment from the file headers.")]
 [assembly: AssemblyCompany("Cédric Foellmi / Focale")]
 [assembly: AssemblyProduct("Focale.NINA.Plugin")]
 [assembly: AssemblyCopyright("Copyright © 2026 Cédric Foellmi / Focale")]
@@ -19,6 +21,9 @@ using System.Resources;
 
 [assembly: NeutralResourcesLanguage("en")]
 [assembly: ComVisible(false)]
+// GenerateAssemblyInfo is off, so the SDK does not emit this from the -windows TFM itself.
+[assembly: SupportedOSPlatform("windows")]
+[assembly: InternalsVisibleTo("Focale.NINA.Plugin.Tests")]
 
 // PluginBase reads these AssemblyMetadata keys via reflection.
 [assembly: AssemblyMetadata("License",                 "MPL-2.0")]
@@ -26,17 +31,15 @@ using System.Resources;
 [assembly: AssemblyMetadata("Homepage",                "https://focale.space")]
 [assembly: AssemblyMetadata("Repository",              "https://github.com/arcsecond-io/focale-nina-plugin")]
 [assembly: AssemblyMetadata("ChangelogURL",            "https://github.com/arcsecond-io/focale-nina-plugin/releases")]
-[assembly: AssemblyMetadata("Tags",                    "Focale,Arcsecond,Cloud,Upload,FITS,Metadata")]
+[assembly: AssemblyMetadata("Tags",                    "Focale,Cloud,Upload,FITS,XISF")]
 [assembly: AssemblyMetadata("MinimumApplicationVersion", "3.3.0.0")]
 [assembly: AssemblyMetadata("LongDescription",         @"Bridges N.I.N.A. to Focale (https://focale.space).
 
-Two integrations:
+Every FITS or XISF frame NINA saves is uploaded to Focale in the background. Focale reads the file header and files the frame under the right night, site, telescope, camera and target, as an observation or a calibration frame, with image metrics computed server-side.
 
-1. Metadata sync — event-driven JSON snapshots of the active equipment profile, the running sequencer tree, target list, device runtime state, and observatory/site info are pushed to Focale on profile changes, device connect/disconnect, sequence start/finish, slews and filter changes, so each Focale session is correlated with what NINA actually had configured at the time.
+Uploads go through a durable on-disk queue: frames wait while you are offline, signed out, or over a plan limit, and go up once that clears. A frame is only given up when Focale refuses that specific file.
 
-2. Automatic FITS upload — every successfully saved FITS frame (with its full ImageMetaData) is uploaded to Focale in the background via a durable on-disk queue that survives network drops and app restarts.
-
-Privacy: API key is stored DPAPI-encrypted at rest. Known secret-bearing fields (Astrometry / PinPoint API keys, anything matching Password/ApiKey/Token/Secret/Credential) are redacted before any payload is sent. Both upload and metadata sync have their own toggle and default to the user's explicit opt-in after key entry.")]
+Privacy: you sign in with your Focale account. The refresh token is stored encrypted with Windows DPAPI; the access token stays in memory. Only the saved image files are sent - no NINA profile, settings or logs. Automatic upload can be turned off at any time.")]
 [assembly: AssemblyMetadata("FeaturedImageURL",        "https://focale.space/img/nina-plugin-featured.png")]
 [assembly: AssemblyMetadata("ScreenshotURL",           "https://focale.space/img/nina-plugin-screenshot-1.png")]
 [assembly: AssemblyMetadata("AltScreenshotURL",        "https://focale.space/img/nina-plugin-screenshot-2.png")]

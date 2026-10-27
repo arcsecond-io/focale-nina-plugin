@@ -13,7 +13,13 @@
   "License": "MPL-2.0",
   "LicenseURL": "https://www.mozilla.org/en-US/MPL/2.0/",
   "ChangelogURL": "https://github.com/arcsecond-io/focale-nina-plugin/releases",
-  "Tags": ["Focale", "Arcsecond", "Cloud", "Upload", "FITS", "Metadata"],
+  "Tags": [
+    "Focale",
+    "Cloud",
+    "Upload",
+    "FITS",
+    "XISF"
+  ],
   "MinimumApplicationVersion": {
     "Major": "3",
     "Minor": "3",
@@ -21,16 +27,16 @@
     "Build": "0"
   },
   "Descriptions": {
-    "ShortDescription": "Pushes NINA equipment & sequence metadata to Focale and uploads captured FITS frames automatically.",
-    "LongDescription": "Bridges N.I.N.A. to Focale (https://focale.space).\n\nTwo integrations:\n\n1. Metadata sync — event-driven JSON snapshots of the active equipment profile, the running sequencer tree, target list, device runtime state, and observatory/site info are pushed to Focale on profile changes, device connect/disconnect, sequence start/finish, slews and filter changes.\n\n2. Automatic FITS upload — every successfully saved FITS frame (with its full ImageMetaData) is uploaded to Focale in the background via a durable on-disk queue that survives network drops and app restarts.\n\nPrivacy: API key is stored DPAPI-encrypted at rest. Known secret-bearing fields (Astrometry/PinPoint API keys, anything matching Password/ApiKey/Token/Secret/Credential) are redacted before any payload is sent. Both upload and metadata sync have their own toggle.",
+    "ShortDescription": "Uploads every FITS / XISF frame NINA saves to Focale, which rebuilds your nights, targets and equipment from the file headers.",
+    "LongDescription": "Bridges N.I.N.A. to Focale (https://focale.space).\n\nEvery FITS or XISF frame NINA saves is uploaded to Focale in the background. Focale reads the file header and files the frame under the right night, site, telescope, camera and target, as an observation or a calibration frame, with image metrics computed server-side.\n\nUploads go through a durable on-disk queue: frames wait while you are offline, signed out, or over a plan limit, and go up once that clears. A frame is only given up when Focale refuses that specific file.\n\nPrivacy: you sign in with your Focale account. The refresh token is stored encrypted with Windows DPAPI; the access token stays in memory. Only the saved image files are sent - no NINA profile, settings or logs. Automatic upload can be turned off at any time.",
     "FeaturedImageURL": "https://focale.space/img/nina-plugin-featured.png",
-    "ScreenshotURL":    "https://focale.space/img/nina-plugin-screenshot-1.png",
+    "ScreenshotURL": "https://focale.space/img/nina-plugin-screenshot-1.png",
     "AltScreenshotURL": "https://focale.space/img/nina-plugin-screenshot-2.png"
   },
   "Installer": {
-    "URL":          "https://github.com/arcsecond-io/focale-nina-plugin/releases/download/v__VERSION__/Focale.NINA.Plugin-__VERSION__.zip",
-    "Checksum":     "__SHA256__",
+    "URL": "https://github.com/arcsecond-io/focale-nina-plugin/releases/download/v__VERSION__/Focale.NINA.Plugin-__VERSION__.zip",
+    "Checksum": "__SHA256__",
     "ChecksumType": "SHA256",
-    "Type":         "ARCHIVE"
+    "Type": "ARCHIVE"
   }
 }

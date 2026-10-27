@@ -6,15 +6,12 @@ using System.Threading.Tasks;
 using Focale.NINA.Plugin.Api;
 using Focale.NINA.Plugin.Common;
 using Focale.NINA.Plugin.Settings;
-using Focale.NINA.Plugin.Sync;
 using Focale.NINA.Plugin.Ui;
 using Focale.NINA.Plugin.Upload;
 using NINA.Core.Utility;
-using NINA.Equipment.Interfaces.Mediator;
 using NINA.Plugin;
 using NINA.Plugin.Interfaces;
 using NINA.Profile.Interfaces;
-using NINA.Sequencer.Interfaces.Mediator;
 using NINA.WPF.Base.Interfaces.Mediator;
 
 namespace Focale.NINA.Plugin;
@@ -23,51 +20,17 @@ namespace Focale.NINA.Plugin;
 public sealed class FocalePlugin : PluginBase {
     private readonly IProfileService _profileService;
     private readonly IImageSaveMediator _imageSaveMediator;
-    private readonly ISequenceMediator _sequenceMediator;
-    private readonly ICameraMediator _cameraMediator;
-    private readonly ITelescopeMediator _telescopeMediator;
-    private readonly IFocuserMediator _focuserMediator;
-    private readonly IFilterWheelMediator _filterWheelMediator;
-    private readonly IGuiderMediator _guiderMediator;
-    private readonly IRotatorMediator _rotatorMediator;
-    private readonly IDomeMediator _domeMediator;
-    private readonly IWeatherDataMediator _weatherDataMediator;
-    private readonly ISafetyMonitorMediator _safetyMonitorMediator;
 
     private FocaleSettings? _settings;
     private FocaleApiClient? _api;
-    private SessionLifecycle? _session;
     private UploadQueue? _queue;
     private UploadWorker? _worker;
-    private SequenceSyncService? _sequenceSync;
     private FocaleOptionsViewModel? _optionsVm;
 
     [ImportingConstructor]
-    public FocalePlugin(
-        IProfileService profileService,
-        IImageSaveMediator imageSaveMediator,
-        ISequenceMediator sequenceMediator,
-        ICameraMediator cameraMediator,
-        ITelescopeMediator telescopeMediator,
-        IFocuserMediator focuserMediator,
-        IFilterWheelMediator filterWheelMediator,
-        IGuiderMediator guiderMediator,
-        IRotatorMediator rotatorMediator,
-        IDomeMediator domeMediator,
-        IWeatherDataMediator weatherDataMediator,
-        ISafetyMonitorMediator safetyMonitorMediator) {
-        _profileService        = profileService;
-        _imageSaveMediator     = imageSaveMediator;
-        _sequenceMediator      = sequenceMediator;
-        _cameraMediator        = cameraMediator;
-        _telescopeMediator     = telescopeMediator;
-        _focuserMediator       = focuserMediator;
-        _filterWheelMediator   = filterWheelMediator;
-        _guiderMediator        = guiderMediator;
-        _rotatorMediator       = rotatorMediator;
-        _domeMediator          = domeMediator;
-        _weatherDataMediator   = weatherDataMediator;
-        _safetyMonitorMediator = safetyMonitorMediator;
+    public FocalePlugin(IProfileService profileService, IImageSaveMediator imageSaveMediator) {
+        _profileService    = profileService;
+        _imageSaveMediator = imageSaveMediator;
     }
 
     /// <summary>Exposed so the auto-discovered DataTemplate ("Focale_Options") can bind to it.</summary>
@@ -78,11 +41,6 @@ public sealed class FocalePlugin : PluginBase {
             var pluginId = Guid.Parse(Identifier);
             _settings = new FocaleSettings(pluginId, _profileService.ActiveProfile.PluginSettings);
             _api      = new FocaleApiClient(_settings);
-            // SessionLifecycle is kept solely so SequenceSyncService can lazily
-            // ensure the NightLog exists when a sequence starts. Frame upload
-            // no longer touches it — the auto-ingest endpoint resolves the
-            // NightLog itself from the FITS header.
-            _session  = new SessionLifecycle(_api);
 
             var dataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -96,10 +54,7 @@ public sealed class FocalePlugin : PluginBase {
 
             _imageSaveMediator.ImageSaved += OnImageSaved;
 
-            _sequenceSync = new SequenceSyncService(_settings, _api, _session, _sequenceMediator);
-            _sequenceSync.Start();
-
-            _optionsVm = new FocaleOptionsViewModel(_settings, _api, _queue);
+            _optionsVm = new FocaleOptionsViewModel(_settings, _api, _queue, _worker);
 
             Logger.Info($"Focale plugin initialized. Tonight is {NightDate.Format(NightDate.Today())}.");
             return Task.CompletedTask;
@@ -111,12 +66,12 @@ public sealed class FocalePlugin : PluginBase {
 
     public override async Task Teardown() {
         try { _imageSaveMediator.ImageSaved -= OnImageSaved; } catch { }
-        try { _sequenceSync?.Stop(); } catch (Exception ex) { Logger.Error("Focale: sequenceSync.Stop failed", ex); }
 
         if (_worker is not null) {
             try { await _worker.StopAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false); }
             catch (Exception ex) { Logger.Error("Focale: worker.StopAsync failed", ex); }
         }
+        _optionsVm?.Dispose();
         _worker?.Dispose();
         _api?.Dispose();
         _queue?.Dispose();
@@ -130,7 +85,13 @@ public sealed class FocalePlugin : PluginBase {
             if (!_settings.EnableFitsUpload) return;
             if (e?.PathToImage is null) return;
 
-            var fileInfo = new FileInfo(e.PathToImage.LocalPath);
+            var localPath = e.PathToImage.LocalPath;
+            if (!ImageFileTypes.IsSupported(localPath)) {
+                Logger.Trace($"Focale: skipping {Path.GetFileName(localPath)} — only FITS and XISF are uploaded");
+                return;
+            }
+
+            var fileInfo = new FileInfo(localPath);
             if (!fileInfo.Exists) {
                 Logger.Warning($"Focale: ImageSaved fired but file missing: {e.PathToImage}");
                 return;
@@ -138,7 +99,7 @@ public sealed class FocalePlugin : PluginBase {
 
             // Capture time + frame classification are kept on the queue row for
             // log readability and dead-letter triage. The server reads the
-            // authoritative DATE-OBS / IMAGETYP straight from the FITS header
+            // authoritative DATE-OBS / IMAGETYP straight from the file header
             // on auto-ingest, so these never leave the plugin.
             var captureLocal = DateTime.Now;
             try {
