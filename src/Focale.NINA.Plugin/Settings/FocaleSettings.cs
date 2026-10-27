@@ -18,6 +18,10 @@ public sealed class FocaleSettings {
     private const string KeyUsername              = "Auth.Username";
     private const string KeyServerUrl             = "Server.Url";
     private const string KeyEnableUpload          = "Feature.EnableFitsUpload";
+    private const string KeyEnableNightEvents     = "Feature.EnableNightEvents";
+    private const string KeyStorageMode           = "Upload.StorageMode";
+    private const string KeyDestinationUuid       = "Upload.DestinationStorage.Uuid";
+    private const string KeyDestinationName       = "Upload.DestinationStorage.Name";
 
     public const string DefaultServerUrl = "https://api.focale.space";
 
@@ -44,6 +48,34 @@ public sealed class FocaleSettings {
         set => _store.SetValue(_pluginId, KeyEnableUpload, value);
     }
 
+    /// <summary>Send what happens during the night (autofocus, flips, guiding RMS, …) to the night's log.</summary>
+    public bool EnableNightEvents {
+        get => !_store.TryGetValue(_pluginId, KeyEnableNightEvents, out bool v) || v;  // default true
+        set => _store.SetValue(_pluginId, KeyEnableNightEvents, value);
+    }
+
+    /// <summary>
+    /// Where uploaded frames' pixels go. <see cref="StorageMode.Unset"/> until the user picks one:
+    /// nothing is uploaded before that (frames wait in the queue).
+    /// </summary>
+    public StorageMode StorageMode {
+        get => _store.TryGetValue(_pluginId, KeyStorageMode, out int v) && Enum.IsDefined(typeof(StorageMode), v)
+            ? (StorageMode)v
+            : StorageMode.Unset;
+        set => _store.SetValue(_pluginId, KeyStorageMode, (int)value);
+    }
+
+    /// <summary>The user's own storage (a Focale DataStorage uuid) for <see cref="StorageMode.OwnStorage"/>.</summary>
+    public string? DestinationStorageUuid {
+        get => _store.TryGetValue(_pluginId, KeyDestinationUuid, out string v) && !string.IsNullOrEmpty(v) ? v : null;
+        set => _store.SetValue(_pluginId, KeyDestinationUuid, value ?? string.Empty);
+    }
+
+    public string? DestinationStorageName {
+        get => _store.TryGetValue(_pluginId, KeyDestinationName, out string v) && !string.IsNullOrEmpty(v) ? v : null;
+        set => _store.SetValue(_pluginId, KeyDestinationName, value ?? string.Empty);
+    }
+
     public string? Username {
         get => _store.TryGetValue(_pluginId, KeyUsername, out string v) && !string.IsNullOrEmpty(v) ? v : null;
         set => _store.SetValue(_pluginId, KeyUsername, value ?? string.Empty);
@@ -65,4 +97,15 @@ public sealed class FocaleSettings {
     }
 
     public bool HasRefreshToken() => !string.IsNullOrEmpty(GetRefreshToken());
+}
+
+public enum StorageMode {
+    /// <summary>Not chosen yet: nothing is uploaded.</summary>
+    Unset = 0,
+    /// <summary>Focale indexes the frame and keeps its pixels in Focale's cloud storage (counts against the plan's storage).</summary>
+    FocaleStorage = 1,
+    /// <summary>Focale indexes the frame and stores its pixels in one of the user's own storages (S3, SFTP, SMB).</summary>
+    OwnStorage = 2,
+    /// <summary>Focale indexes the frame and computes its metrics, then discards the pixels. The file stays on this machine only.</summary>
+    IndexOnly = 3,
 }

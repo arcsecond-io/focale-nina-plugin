@@ -5,13 +5,16 @@ using System.Threading;
 using System.Threading.Tasks;
 using Focale.NINA.Plugin.Api;
 using Focale.NINA.Plugin.Common;
+using Focale.NINA.Plugin.Events;
 using Focale.NINA.Plugin.Settings;
 using Focale.NINA.Plugin.Ui;
 using Focale.NINA.Plugin.Upload;
 using NINA.Core.Utility;
+using NINA.Equipment.Interfaces.Mediator;
 using NINA.Plugin;
 using NINA.Plugin.Interfaces;
 using NINA.Profile.Interfaces;
+using NINA.Sequencer.Interfaces.Mediator;
 using NINA.WPF.Base.Interfaces.Mediator;
 
 namespace Focale.NINA.Plugin;
@@ -20,17 +23,37 @@ namespace Focale.NINA.Plugin;
 public sealed class FocalePlugin : PluginBase {
     private readonly IProfileService _profileService;
     private readonly IImageSaveMediator _imageSaveMediator;
+    private readonly ISequenceMediator _sequenceMediator;
+    private readonly IFocuserMediator _focuserMediator;
+    private readonly ITelescopeMediator _telescopeMediator;
+    private readonly IGuiderMediator _guiderMediator;
+    private readonly ISafetyMonitorMediator _safetyMonitorMediator;
 
     private FocaleSettings? _settings;
     private FocaleApiClient? _api;
     private UploadQueue? _queue;
     private UploadWorker? _worker;
+    private NightEventStore? _eventStore;
+    private NightEventSender? _eventSender;
+    private NinaEventSource? _eventSource;
     private FocaleOptionsViewModel? _optionsVm;
 
     [ImportingConstructor]
-    public FocalePlugin(IProfileService profileService, IImageSaveMediator imageSaveMediator) {
-        _profileService    = profileService;
-        _imageSaveMediator = imageSaveMediator;
+    public FocalePlugin(
+        IProfileService profileService,
+        IImageSaveMediator imageSaveMediator,
+        ISequenceMediator sequenceMediator,
+        IFocuserMediator focuserMediator,
+        ITelescopeMediator telescopeMediator,
+        IGuiderMediator guiderMediator,
+        ISafetyMonitorMediator safetyMonitorMediator) {
+        _profileService        = profileService;
+        _imageSaveMediator     = imageSaveMediator;
+        _sequenceMediator      = sequenceMediator;
+        _focuserMediator       = focuserMediator;
+        _telescopeMediator     = telescopeMediator;
+        _guiderMediator        = guiderMediator;
+        _safetyMonitorMediator = safetyMonitorMediator;
     }
 
     /// <summary>Exposed so the auto-discovered DataTemplate ("Focale_Options") can bind to it.</summary>
@@ -49,12 +72,29 @@ public sealed class FocalePlugin : PluginBase {
             _queue = new UploadQueue(Path.Combine(dataDir, "queue.db"));
             _ = _queue.InitializeAsync();   // fire-and-forget; the worker tolerates startup races
 
-            _worker = new UploadWorker(_queue, _api, _settings);
+            // Night events: recorded from NINA as they happen, kept locally, and filed under the
+            // night log each upload reports (the worker's callback below).
+            _eventStore  = new NightEventStore(Path.Combine(dataDir, "events.db"));
+            var eventsReady = _eventStore.InitializeAsync();
+            _eventSender = new NightEventSender(_eventStore, _api, _settings);
+            _eventSource = new NinaEventSource(new NightEventRecorder(_eventStore), _settings,
+                _sequenceMediator, _focuserMediator, _telescopeMediator, _guiderMediator,
+                _safetyMonitorMediator, _imageSaveMediator);
+            _ = eventsReady.ContinueWith(t => {
+                if (t.IsFaulted) { Logger.Error("Focale: night event store failed to open", t.Exception); return; }
+                _eventSource.Start();
+                _eventSender.Start();
+            }, TaskScheduler.Default);
+
+            _worker = new UploadWorker(_queue, _api, _settings, async (nightDate, nightLogUuid) => {
+                await _eventStore.RememberNightLogAsync(nightDate, nightLogUuid).ConfigureAwait(false);
+                _eventSender.Wake();
+            });
             _worker.Start();
 
             _imageSaveMediator.ImageSaved += OnImageSaved;
 
-            _optionsVm = new FocaleOptionsViewModel(_settings, _api, _queue, _worker);
+            _optionsVm = new FocaleOptionsViewModel(_settings, _api, _queue, _worker, _eventSender);
 
             Logger.Info($"Focale plugin initialized. Tonight is {NightDate.Format(NightDate.Today())}.");
             return Task.CompletedTask;
@@ -66,6 +106,11 @@ public sealed class FocalePlugin : PluginBase {
 
     public override async Task Teardown() {
         try { _imageSaveMediator.ImageSaved -= OnImageSaved; } catch { }
+        try { _eventSource?.Dispose(); } catch (Exception ex) { Logger.Error("Focale: event source teardown failed", ex); }
+        if (_eventSender is not null) {
+            try { await _eventSender.StopAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
+            catch (Exception ex) { Logger.Error("Focale: event sender stop failed", ex); }
+        }
 
         if (_worker is not null) {
             try { await _worker.StopAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false); }
@@ -73,6 +118,8 @@ public sealed class FocalePlugin : PluginBase {
         }
         _optionsVm?.Dispose();
         _worker?.Dispose();
+        _eventSender?.Dispose();
+        _eventStore?.Dispose();
         _api?.Dispose();
         _queue?.Dispose();
         Logger.Info("Focale plugin torn down");

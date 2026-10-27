@@ -1,6 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!--
+      net8.0-windows  — built against NINA 3.2 (the one we ship). NINA 3.3 runs on .NET 10,
+                        which loads .NET 8 assemblies, so this single build serves 3.2 and 3.3.
+      net10.0-windows — built against NINA 3.3, never shipped: it makes CI fail as soon as the
+                        code uses an API NINA 3.3 changed or removed.
+    -->
+    <TargetFrameworks>net8.0-windows;net10.0-windows</TargetFrameworks>
     <OutputType>Library</OutputType>
     <UseWPF>true</UseWPF>
     <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
@@ -8,56 +14,42 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <RootNamespace>Focale.NINA.Plugin</RootNamespace>
     <AssemblyName>Focale.NINA.Plugin</AssemblyName>
-    <!-- Plugin DLLs are loaded by NINA into a custom AssemblyLoadContext.
-         Do not copy NINA host assemblies into the plugin's output. -->
+    <!-- The plugin folder must carry its own runtime dependencies (SQLite), so copy them. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Restore warnings about NINA's own dependency graph (.NET Framework-era packages, a
+         nightly pointing at a missing alpha). None of it ships with the plugin. -->
+    <NoWarn>$(NoWarn);NU1603;NU1701</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    Host versions: what each NINA release itself depends on (NINA.Core's nuspec). The plugin is
+    compiled against them and does NOT ship them (ExcludeAssets=runtime): NINA has them loaded
+    already, and the plugin's [Export] attributes must be the very MEF types NINA looks for.
+  -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <NinaVersion>3.2.0.9001</NinaVersion>
+    <MefVersion>8.0.0</MefVersion>
+    <MvvmVersion>8.4.0</MvvmVersion>
+    <NewtonsoftVersion>13.0.3</NewtonsoftVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
+    <NinaVersion>3.3.0.1069-nightly</NinaVersion>
+    <MefVersion>10.0.10</MefVersion>
+    <MvvmVersion>8.4.2</MvvmVersion>
+    <NewtonsoftVersion>13.0.4</NewtonsoftVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- NINA host assemblies. These ship with NINA at runtime; we only reference, not copy. -->
-    <Reference Include="NINA.Plugin">
-      <HintPath>$(NinaBinPath)NINA.Plugin.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="NINA.Core">
-      <HintPath>$(NinaBinPath)NINA.Core.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="NINA.Profile">
-      <HintPath>$(NinaBinPath)NINA.Profile.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="NINA.Equipment">
-      <HintPath>$(NinaBinPath)NINA.Equipment.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="NINA.Image">
-      <HintPath>$(NinaBinPath)NINA.Image.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="NINA.Sequencer">
-      <HintPath>$(NinaBinPath)NINA.Sequencer.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="NINA.WPF.Base">
-      <HintPath>$(NinaBinPath)NINA.WPF.Base.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="NINA.Astrometry">
-      <HintPath>$(NinaBinPath)NINA.Astrometry.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
+    <PackageReference Include="NINA.Plugin"                       Version="$(NinaVersion)"      ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="System.ComponentModel.Composition" Version="$(MefVersion)"       ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="CommunityToolkit.Mvvm"             Version="$(MvvmVersion)"      ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Newtonsoft.Json"                   Version="$(NewtonsoftVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Plugin runtime dependencies. These DO ship inside the plugin folder. Versions of the
-         ones NINA also uses (Newtonsoft.Json, MEF, CommunityToolkit.Mvvm) match NINA 3.3's, so the
-         plugin's [Export] attributes are the very types NINA's MEF container looks for. -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <!-- Plugin-only runtime dependencies. These DO ship inside the plugin folder. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
-    <PackageReference Include="System.ComponentModel.Composition" Version="10.0.10" />
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
 
 </Project>

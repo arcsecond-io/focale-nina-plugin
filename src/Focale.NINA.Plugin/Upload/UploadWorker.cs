@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Threading;
@@ -20,7 +21,10 @@ namespace Focale.NINA.Plugin.Upload;
 public enum UploadFailureKind {
     /// <summary>401: the session is gone. Keep the frame; wait for the user to sign in.</summary>
     SignedOut,
-    /// <summary>402/403/507: a plan limit or quota. Keep the frame; pause the whole queue.</summary>
+    /// <summary>
+    /// 402/403/507: a plan limit or quota; or a 400 refusing the chosen destination storage
+    /// (removed, made read-only, …). Keep the frame; pause the whole queue.
+    /// </summary>
     Refused,
     /// <summary>408/425/429/5xx: try this frame again later, with backoff.</summary>
     Transient,
@@ -33,6 +37,8 @@ public enum UploadWorkerState {
     Disabled,
     /// <summary>No session: frames wait in the queue until the user signs in.</summary>
     SignedOut,
+    /// <summary>The user has not chosen where frames go yet (Focale storage, own storage, index only).</summary>
+    AwaitingStorageChoice,
     /// <summary>Focale refused uploads (plan limit, quota). Frames wait until <see cref="UploadWorker.Resume"/> or the pause expires.</summary>
     Paused,
     Running,
@@ -66,6 +72,7 @@ public sealed class UploadWorker : IDisposable {
     private readonly UploadQueue _queue;
     private readonly FocaleApiClient _api;
     private readonly FocaleSettings _settings;
+    private readonly Func<string, string, Task>? _onNightLogFiled;
     private readonly SemaphoreSlim _wake = new(0, 1);
     private readonly object _stateLock = new();
 
@@ -76,10 +83,16 @@ public sealed class UploadWorker : IDisposable {
     private string? _pauseMessage;
     private DateTime _pausedUntilUtc = DateTime.MinValue;
 
-    public UploadWorker(UploadQueue queue, FocaleApiClient api, FocaleSettings settings) {
-        _queue    = queue;
-        _api      = api;
-        _settings = settings;
+    /// <param name="onNightLogFiled">
+    /// Told (night date, night log uuid) after each upload, so the night's events go to the log
+    /// Focale filed its frames under.
+    /// </param>
+    public UploadWorker(UploadQueue queue, FocaleApiClient api, FocaleSettings settings,
+                        Func<string, string, Task>? onNightLogFiled = null) {
+        _queue           = queue;
+        _api             = api;
+        _settings        = settings;
+        _onNightLogFiled = onNightLogFiled;
     }
 
     public UploadWorkerState State { get { lock (_stateLock) return _state; } }
@@ -125,6 +138,7 @@ public sealed class UploadWorker : IDisposable {
 
     public static UploadFailureKind Classify(FocaleApiException ex) {
         var status = (int?)ex.StatusCode;
+        if (status == 400 && ex.FieldErrors.Contains("destination")) return UploadFailureKind.Refused;
         return status switch {
             401                   => UploadFailureKind.SignedOut,
             402 or 403 or 507     => UploadFailureKind.Refused,
@@ -147,6 +161,12 @@ public sealed class UploadWorker : IDisposable {
             }
             if (!_api.IsAuthenticated) {
                 SetState(UploadWorkerState.SignedOut, "Sign in to Focale to upload. Frames wait in the queue.");
+                await IdleAsync(IdlePoll, ct).ConfigureAwait(false);
+                continue;
+            }
+            if (UploadFields(_settings) is null) {
+                SetState(UploadWorkerState.AwaitingStorageChoice,
+                         "Choose where your frames go in the Focale settings. Nothing is uploaded until you do.");
                 await IdleAsync(IdlePoll, ct).ConfigureAwait(false);
                 continue;
             }
@@ -218,15 +238,17 @@ public sealed class UploadWorker : IDisposable {
             // Dataset, ObservingSite, Telescope, Camera, Observation/Calibration, target, and
             // pixel metrics. The sha256 doubles as idempotency key so retried uploads return
             // the existing DataFile rather than duplicating.
-            var extraFields = new Dictionary<string, string> {
-                ["auto_ingest"]  = "true",
-                ["persist_file"] = "true",
-                ["source"]       = IngestSource,
-            };
-            await _api.UploadFileMultipartAsync(
+            var extraFields = UploadFields(_settings);
+            if (extraFields is null) {
+                // The storage choice was cleared since this frame was claimed.
+                await RequeueAsync(job, job.Attempt, TimeSpan.Zero, "no storage mode").ConfigureAwait(false);
+                return;
+            }
+            var response = await _api.UploadFileMultipartAsync(
                 FocaleEndpoints.DataFiles, fi, job.Sha256, ct, extraFields).ConfigureAwait(false);
             await _queue.MarkDoneAsync(job.Id, CancellationToken.None).ConfigureAwait(false);
             Logger.Info($"Focale: uploaded {fi.Name} ({fi.Length} bytes, attempt {job.Attempt + 1})");
+            await ReportNightLogAsync(response).ConfigureAwait(false);
         } catch (FocaleApiException apiEx) {
             await HandleApiFailureAsync(job, apiEx).ConfigureAwait(false);
         } catch (OperationCanceledException) when (ct.IsCancellationRequested) {
@@ -240,6 +262,46 @@ public sealed class UploadWorker : IDisposable {
             Logger.Warning($"Focale: network unavailable, frame {job.Id} waits — {ex.Message}");
         } catch (Exception ex) {
             await RetryOrDieAsync(job, ex.Message).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// The auto-ingest form fields for the user's storage mode, or null while none is chosen
+    /// (or own storage is chosen without a storage).
+    /// </summary>
+    public static Dictionary<string, string>? UploadFields(FocaleSettings settings) =>
+        UploadFields(settings.StorageMode, settings.DestinationStorageUuid);
+
+    public static Dictionary<string, string>? UploadFields(StorageMode mode, string? destinationUuid) {
+        var fields = new Dictionary<string, string> {
+            ["auto_ingest"] = "true",
+            ["source"]      = IngestSource,
+        };
+        switch (mode) {
+            case StorageMode.FocaleStorage:
+                fields["persist_file"] = "true";
+                return fields;
+            case StorageMode.IndexOnly:
+                // Focale reads the header and computes the metrics from the bytes, then keeps
+                // nothing of the pixels.
+                fields["persist_file"] = "false";
+                return fields;
+            case StorageMode.OwnStorage when !string.IsNullOrWhiteSpace(destinationUuid):
+                fields["persist_file"] = "true";
+                fields["destination"]  = destinationUuid!;
+                return fields;
+            default:
+                return null;
+        }
+    }
+
+    private async Task ReportNightLogAsync(Api.Models.UploadResponse? response) {
+        var nightLog = response?.Ingestion?.NightLog;
+        if (_onNightLogFiled is null || string.IsNullOrEmpty(nightLog?.Uuid) || string.IsNullOrEmpty(nightLog.Date)) return;
+        try {
+            await _onNightLogFiled(nightLog.Date!, nightLog.Uuid!).ConfigureAwait(false);
+        } catch (Exception ex) {
+            Logger.Warning($"Focale: could not remember night log {nightLog.Uuid} — {ex.Message}");
         }
     }
 
@@ -260,8 +322,10 @@ public sealed class UploadWorker : IDisposable {
 
             case UploadFailureKind.Refused:
                 await RequeueAsync(job, job.Attempt, TimeSpan.Zero, apiEx.Message).ConfigureAwait(false);
-                var message = apiEx.ServerMessage
-                              ?? $"Focale refused the upload ({(int?)apiEx.StatusCode}). Check your plan and storage on focale.space.";
+                var message = apiEx.FieldErrors.Contains("destination")
+                    ? $"Focale cannot upload to your storage \"{_settings.DestinationStorageName ?? _settings.DestinationStorageUuid}\". Choose another storage in the Focale settings."
+                    : apiEx.ServerMessage
+                      ?? $"Focale refused the upload ({(int?)apiEx.StatusCode}). Check your plan and storage on focale.space.";
                 PauseForRefusal(message);
                 Logger.Warning($"Focale: uploads paused until {DateTime.Now + RefusedPause:HH:mm} — {message}");
                 break;

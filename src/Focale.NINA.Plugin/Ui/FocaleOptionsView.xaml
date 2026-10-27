@@ -53,11 +53,33 @@
                 </StackPanel>
             </GroupBox>
 
+            <!-- Storage: chosen once, at sign-in; nothing is uploaded before -->
+            <GroupBox Header="Where your frames go" Margin="0,0,0,8">
+                <StackPanel Margin="8">
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,6"
+                               Text="Focale always reads the header and measures the frame. Choose what happens to its pixels — nothing is uploaded until you do." />
+                    <RadioButton GroupName="FocaleStorageMode" IsChecked="{Binding IsIndexOnly, Mode=TwoWay}"
+                                 Content="Index only — keep the file on this computer; Focale keeps the metadata and measurements" />
+                    <RadioButton GroupName="FocaleStorageMode" IsChecked="{Binding IsFocaleStorage, Mode=TwoWay}" Margin="0,4,0,0"
+                                 Content="Focale storage — keep a copy in Focale (counts against your plan's storage)" />
+                    <RadioButton GroupName="FocaleStorageMode" IsChecked="{Binding IsOwnStorage, Mode=TwoWay}" Margin="0,4,0,0"
+                                 Content="My own storage — copy it to one of my storages (S3, SFTP, SMB)" />
+                    <StackPanel Orientation="Horizontal" Margin="20,6,0,0"
+                                Visibility="{Binding IsOwnStorage, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                        <ComboBox MinWidth="260" ItemsSource="{Binding Storages}" SelectedItem="{Binding SelectedStorage, Mode=TwoWay}" />
+                        <Button Content="Load my storages" Command="{Binding LoadStoragesCommand}" Margin="8,0,0,0" />
+                        <TextBlock VerticalAlignment="Center" Margin="8,0,0,0" TextWrapping="Wrap" Text="{Binding StoragesStatus}" />
+                    </StackPanel>
+                </StackPanel>
+            </GroupBox>
+
             <!-- Features -->
             <GroupBox Header="Features" Margin="0,0,0,8">
                 <StackPanel Margin="8">
                     <CheckBox IsChecked="{Binding EnableFitsUpload}"
                               Content="Automatically upload every saved FITS / XISF frame" />
+                    <CheckBox IsChecked="{Binding EnableNightEvents}" Margin="0,4,0,0"
+                              Content="Send what happens during the night (sequence, autofocus, meridian flips, guiding RMS, dithers, park, safety) to the night's Logbook" />
                 </StackPanel>
             </GroupBox>
 
@@ -88,7 +110,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
                         Text="• HTTPS only; server certificate validated against the OS trust store. TLS verification is never disabled." />
                     <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
-                        Text="• Only saved FITS / XISF files are sent — no NINA profile, settings or logs. Nothing leaves your machine until you sign in and leave automatic upload enabled." />
+                        Text="• Only saved FITS / XISF files and, if enabled, the night's events (times, autofocus positions, guiding RMS…) are sent — no NINA profile, settings or log files. Nothing leaves your machine until you sign in and choose where frames go." />
                     <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
                         Text="• Frames wait in the local queue while you are offline, signed out, or over a plan limit, and go up once that clears." />
                 </StackPanel>

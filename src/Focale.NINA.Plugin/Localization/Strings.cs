@@ -10,5 +10,5 @@ namespace Focale.NINA.Plugin.Localization;
 /// </summary>
 public static class Strings {
     public const string PluginDisplayName = "Focale";
-    public const string PluginShortDesc   = "Uploads every FITS / XISF frame NINA saves to Focale.";
+    public const string PluginShortDesc   = "Sends NINA's frames and night events to Focale.";
 }

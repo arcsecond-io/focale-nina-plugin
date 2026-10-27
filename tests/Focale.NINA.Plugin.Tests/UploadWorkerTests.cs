@@ -73,3 +73,42 @@ public class UploadWorkerClassifyTests {
         UploadWorker.IsNetworkFailure(Error(500)).Should().BeFalse();
     }
 }
+
+[TestFixture]
+public class UploadWorkerStorageModeTests {
+    [Test]
+    public void Nothing_is_uploaded_before_a_mode_is_chosen() {
+        UploadWorker.UploadFields(Focale.NINA.Plugin.Settings.StorageMode.Unset, null).Should().BeNull();
+        UploadWorker.UploadFields(Focale.NINA.Plugin.Settings.StorageMode.OwnStorage, null).Should().BeNull();
+    }
+
+    [Test]
+    public void Each_mode_sends_its_fields() {
+        var index = UploadWorker.UploadFields(Focale.NINA.Plugin.Settings.StorageMode.IndexOnly, null)!;
+        index["persist_file"].Should().Be("false");
+        index.Should().NotContainKey("destination");
+
+        var focale = UploadWorker.UploadFields(Focale.NINA.Plugin.Settings.StorageMode.FocaleStorage, "ignored")!;
+        focale["persist_file"].Should().Be("true");
+        focale.Should().NotContainKey("destination");
+
+        var own = UploadWorker.UploadFields(Focale.NINA.Plugin.Settings.StorageMode.OwnStorage, "uuid-1")!;
+        own["persist_file"].Should().Be("true");
+        own["destination"].Should().Be("uuid-1");
+
+        foreach (var f in new[] { index, focale, own }) {
+            f["auto_ingest"].Should().Be("true");
+            f["source"].Should().Be("observer_console");
+        }
+    }
+
+    [Test]
+    public void A_refused_destination_pauses_instead_of_dropping_the_frame() {
+        var ex = new FocaleApiException("400", System.Net.HttpStatusCode.BadRequest, retryable: false,
+                                        fieldErrors: new[] { "destination" });
+        UploadWorker.Classify(ex).Should().Be(UploadFailureKind.Refused);
+        var other = new FocaleApiException("400", System.Net.HttpStatusCode.BadRequest, retryable: false,
+                                           fieldErrors: new[] { "file" });
+        UploadWorker.Classify(other).Should().Be(UploadFailureKind.Permanent);
+    }
+}

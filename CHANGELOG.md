@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- NINA 3.2 support: the plugin builds for `net8.0-windows` against NINA 3.2 (the shipped build,
+  which NINA 3.3 also loads) and for `net10.0-windows` against NINA 3.3 (a CI check only).
+  NINA's assemblies now come from its NuGet packages; `NINA_REF_URL` is gone. CI also runs
+  `tools/NinaCompatCheck`, which resolves every NINA type and member the shipped DLL uses
+  against NINA 3.3. Minimum NINA version: 3.2.
+- Storage mode, chosen once in the settings page, nothing uploaded before: index only
+  (`persist_file=false`), Focale storage, or one of the user's own storages (`destination`,
+  listed from `GET /datastorages/`, S3/SFTP/SMB/local disk only). A refused destination
+  pauses the queue instead of dead-lettering frames.
+- Night events: the sequence, autofocus runs (failed ones too), meridian flips, guiding RMS
+  per exposure, dithers, park/unpark and safety changes, recorded from NINA's mediators into
+  a local SQLite store (`events.db`) and filed in batches under the night log each upload
+  reports (`POST /nightlogs/<uuid>/events/`, idempotent on `client_id`). Can be turned off.
 - PluginBase derivative with MEF DI wiring.
 - Settings layer with DPAPI-protected refresh token storage.
 - Focale API client with JWT Bearer auth (`X-Focale-Client: nina-plugin`). The access

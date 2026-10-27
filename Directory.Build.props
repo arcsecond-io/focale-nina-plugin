@@ -5,8 +5,5 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
-    <!-- NinaBinPath: where the NINA host assemblies live (used as HintPath for Reference items). -->
-    <!-- Override via -p:NinaBinPath=C:\Program Files\N.I.N.A. - Nighttime Imaging 'N' Astronomy -->
-    <NinaBinPath Condition="'$(NinaBinPath)' == ''">$(MSBuildThisFileDirectory)lib\nina\</NinaBinPath>
   </PropertyGroup>
 </Project>

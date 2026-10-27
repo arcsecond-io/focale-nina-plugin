@@ -15,7 +15,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Resolve version
         id: ver
@@ -26,36 +28,30 @@ jobs:
           if ($v.Split('.').Count -ne 4) { throw "Tag must be vMAJOR.MINOR.PATCH.BUILD, got $tag" }
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # The release build needs the NINA host DLLs to compile against. The job downloads
-      # them from a published NINA release zip; pin the URL via repo variable NINA_REF_URL
-      # (e.g. https://nighttime-imaging.eu/download/3.3.0/NINA-Setup-3.3.0.exe — actually
-      # an MSI/EXE; you'll need a script to extract DLLs). For the scaffold we fail loudly
-      # so the maintainer wires this up deliberately.
-      - name: Stage NINA reference assemblies
-        shell: pwsh
-        run: |
-          if (-not $env:NINA_REF_URL) {
-            throw "NINA_REF_URL is not set. Configure a repo variable / secret pointing to a zip of the NINA bin folder."
-          }
-          New-Item -ItemType Directory -Path lib/nina | Out-Null
-          Invoke-WebRequest -Uri $env:NINA_REF_URL -OutFile nina-bin.zip
-          Expand-Archive -Path nina-bin.zip -DestinationPath lib/nina -Force
-        env:
-          NINA_REF_URL: ${{ vars.NINA_REF_URL }}
-
+      # Ship the net8.0-windows build (NINA 3.2 references): NINA 3.3 runs on .NET 10 and
+      # loads it too. The net10.0-windows target only exists for CI's API check.
       - name: Build plugin
         run: |
           dotnet publish src/Focale.NINA.Plugin/Focale.NINA.Plugin.csproj `
             -c Release `
+            -f net8.0-windows `
             -o artifacts/plugin
 
+      # Allowlist: the plugin and SQLite (with its Windows native libraries). Anything else
+      # in the publish folder (NINA's own build-transitive assets) is provided by NINA.
       - name: Package
         shell: pwsh
         run: |
           $v = "${{ steps.ver.outputs.version }}"
-          New-Item -ItemType Directory -Path artifacts | Out-Null
+          $stage = "artifacts/stage"
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item artifacts/plugin/Focale.NINA.Plugin.dll, artifacts/plugin/Microsoft.Data.Sqlite.dll, artifacts/plugin/SQLitePCLRaw.*.dll $stage
+          foreach ($rid in "win-x64", "win-x86", "win-arm64") {
+            $src = "artifacts/plugin/runtimes/$rid"
+            if (Test-Path $src) { Copy-Item $src "$stage/runtimes/$rid" -Recurse }
+          }
           $zip = "artifacts/Focale.NINA.Plugin-$v.zip"
-          Compress-Archive -Path artifacts/plugin/* -DestinationPath $zip -Force
+          Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
 
       - name: Stamp manifest
         shell: pwsh

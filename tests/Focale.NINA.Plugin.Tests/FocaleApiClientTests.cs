@@ -33,3 +33,21 @@ public class FocaleApiClientErrorBodyTests {
         message.Should().BeNull();
     }
 }
+
+[TestFixture]
+public class FocaleApiClientFieldErrorTests {
+    [Test]
+    public void Validation_errors_name_their_fields() {
+        FocaleApiClient.ParseFieldErrors("""{"destination": ["Unknown storage."]}""")
+            .Should().BeEquivalentTo(new[] { "destination" });
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("<html/>")]
+    [TestCase("""{"error": "subscription_required", "gate": "nina_import", "message": "…"}""")]
+    [TestCase("""{"detail": "Not found."}""")]
+    public void Generic_bodies_name_no_field(string? body) {
+        FocaleApiClient.ParseFieldErrors(body).Should().BeEmpty();
+    }
+}

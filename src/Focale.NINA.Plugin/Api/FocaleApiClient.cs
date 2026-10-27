@@ -27,13 +27,22 @@ public sealed class FocaleApiException : Exception {
     /// <summary>The human-readable <c>message</c> (or <c>detail</c>) of a JSON error body.</summary>
     public string? ServerMessage { get; }
 
+    /// <summary>
+    /// The request fields a DRF validation error names (the top-level keys of a 400 body such as
+    /// <c>{"destination": ["Unknown storage."]}</c>), so a caller can tell a refused setting from
+    /// a refused file.
+    /// </summary>
+    public IReadOnlyCollection<string> FieldErrors { get; }
+
     public FocaleApiException(string message, HttpStatusCode? code, bool retryable, Exception? inner = null,
-                              string? errorCode = null, string? serverMessage = null)
+                              string? errorCode = null, string? serverMessage = null,
+                              IReadOnlyCollection<string>? fieldErrors = null)
         : base(message, inner) {
         StatusCode    = code;
         IsRetryable   = retryable;
         ErrorCode     = errorCode;
         ServerMessage = serverMessage;
+        FieldErrors   = fieldErrors ?? Array.Empty<string>();
     }
 }
 
@@ -199,8 +208,11 @@ public sealed class FocaleApiClient : IDisposable {
     ///
     /// A 401 here is not retried by the auth handler (the file stream has been consumed);
     /// it surfaces as a <see cref="FocaleApiException"/> and the worker re-queues the frame.
+    ///
+    /// Returns what the server says it did with the frame — notably the night log it was filed
+    /// under — or null when the body could not be read (the upload itself succeeded).
     /// </summary>
-    public async Task UploadFileMultipartAsync(
+    public async Task<UploadResponse?> UploadFileMultipartAsync(
         string path,
         FileInfo file,
         string sha256Hex,
@@ -233,7 +245,42 @@ public sealed class FocaleApiClient : IDisposable {
 
         using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         await EnsureSuccessAsync(resp).ConfigureAwait(false);
+        try {
+            return JsonConvert.DeserializeObject<UploadResponse>(
+                await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        } catch (JsonException) {
+            return null;
+        }
     }
+
+    /// <summary>The user's storages that can receive uploads (writable, of a type the back-end writes to).</summary>
+    public async Task<IReadOnlyList<DataStorageResponse>> ListUploadDestinationsAsync(CancellationToken ct) {
+        using var resp = await _http.GetAsync(BuildUri(FocaleEndpoints.DataStorages), ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(resp).ConfigureAwait(false);
+        var token = JToken.Parse(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        // Plain list or DRF page — accept either.
+        var rows = token is JObject page && page["results"] is JArray results ? results : token as JArray;
+        var storages = rows?.ToObject<List<DataStorageResponse>>() ?? new List<DataStorageResponse>();
+        return storages.FindAll(s => s.CanReceiveUploads);
+    }
+
+    /// <summary>Files a batch of events under a night log. Idempotent: the server keys them on their client ids.</summary>
+    public async Task PostNightEventsAsync(string nightLogUuid, IReadOnlyList<NightEventPayload> events, CancellationToken ct) {
+        var path = string.Format(FocaleEndpoints.NightLogEvents, nightLogUuid);
+        using var req = new HttpRequestMessage(HttpMethod.Post, BuildUri(path)) {
+            Content = new StringContent(SerializeEvents(events), System.Text.Encoding.UTF8, "application/json"),
+        };
+        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(resp).ConfigureAwait(false);
+    }
+
+    internal static string SerializeEvents(IReadOnlyList<NightEventPayload> events) =>
+        JsonConvert.SerializeObject(events, EventSerializerSettings);
+
+    private static readonly JsonSerializerSettings EventSerializerSettings = new() {
+        DateTimeZoneHandling = DateTimeZoneHandling.Utc,
+        DateFormatString     = "yyyy-MM-ddTHH:mm:ss.fffZ",
+    };
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage resp) {
         if (resp.IsSuccessStatusCode) return;
@@ -247,7 +294,24 @@ public sealed class FocaleApiClient : IDisposable {
         var (errorCode, serverMessage) = ParseErrorBody(body);
         throw new FocaleApiException(
             $"Focale API responded {statusInt} {resp.ReasonPhrase}: {Truncate(body, 500)}",
-            resp.StatusCode, retryable, errorCode: errorCode, serverMessage: serverMessage);
+            resp.StatusCode, retryable, errorCode: errorCode, serverMessage: serverMessage,
+            fieldErrors: ParseFieldErrors(body));
+    }
+
+    /// <summary>The top-level keys of a JSON object error body, other than the generic ones.</summary>
+    internal static IReadOnlyCollection<string> ParseFieldErrors(string? body) {
+        if (string.IsNullOrWhiteSpace(body)) return Array.Empty<string>();
+        try {
+            if (JToken.Parse(body) is not JObject o) return Array.Empty<string>();
+            var fields = new List<string>();
+            foreach (var p in o.Properties()) {
+                if (p.Name is "error" or "message" or "detail" or "gate" or "non_field_errors") continue;
+                fields.Add(p.Name);
+            }
+            return fields;
+        } catch (JsonException) {
+            return Array.Empty<string>();
+        }
     }
 
     /// <summary>Reads <c>error</c> and <c>message</c>/<c>detail</c> from a JSON error body, if it is one.</summary>

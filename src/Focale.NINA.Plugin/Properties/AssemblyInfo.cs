@@ -9,7 +9,7 @@ using System.Resources;
 
 // Manifest fields read by NINA.Plugin.PluginBase.
 [assembly: AssemblyTitle("Focale")]
-[assembly: AssemblyDescription("Uploads every FITS / XISF frame NINA saves to Focale, which rebuilds your nights, targets and equipment from the file headers.")]
+[assembly: AssemblyDescription("Sends every FITS / XISF frame and what happens during the night (autofocus, flips, guiding RMS) from N.I.N.A. 3.2 and 3.3 to Focale.")]
 [assembly: AssemblyCompany("Cédric Foellmi / Focale")]
 [assembly: AssemblyProduct("Focale.NINA.Plugin")]
 [assembly: AssemblyCopyright("Copyright © 2026 Cédric Foellmi / Focale")]
@@ -31,15 +31,19 @@ using System.Resources;
 [assembly: AssemblyMetadata("Homepage",                "https://focale.space")]
 [assembly: AssemblyMetadata("Repository",              "https://github.com/arcsecond-io/focale-nina-plugin")]
 [assembly: AssemblyMetadata("ChangelogURL",            "https://github.com/arcsecond-io/focale-nina-plugin/releases")]
-[assembly: AssemblyMetadata("Tags",                    "Focale,Cloud,Upload,FITS,XISF")]
-[assembly: AssemblyMetadata("MinimumApplicationVersion", "3.3.0.0")]
-[assembly: AssemblyMetadata("LongDescription",         @"Bridges N.I.N.A. to Focale (https://focale.space).
+[assembly: AssemblyMetadata("Tags",                    "Focale,Cloud,Upload,FITS,XISF,Logbook")]
+[assembly: AssemblyMetadata("MinimumApplicationVersion", "3.2.0.0")]
+[assembly: AssemblyMetadata("LongDescription",         @"Bridges N.I.N.A. to Focale (https://focale.space). Works with NINA 3.2 and 3.3.
 
-Every FITS or XISF frame NINA saves is uploaded to Focale in the background. Focale reads the file header and files the frame under the right night, site, telescope, camera and target, as an observation or a calibration frame, with image metrics computed server-side.
+Frames: every FITS or XISF frame NINA saves is sent to Focale, which reads its header and files it under the right night, site, telescope, camera and target, with image metrics computed server-side. You choose what happens to the pixels: index only (the file stays on your computer), Focale storage, or one of your own storages (S3, SFTP, SMB). Nothing is uploaded until you choose.
 
-Uploads go through a durable on-disk queue: frames wait while you are offline, signed out, or over a plan limit, and go up once that clears. A frame is only given up when Focale refuses that specific file.
+Night events: the sequence, autofocus runs, meridian flips, guiding RMS per exposure, dithers, park and safety changes are sent to the same night, and shown on its Logbook timeline.
 
-Privacy: you sign in with your Focale account. The refresh token is stored encrypted with Windows DPAPI; the access token stays in memory. Only the saved image files are sent - no NINA profile, settings or logs. Automatic upload can be turned off at any time.")]
+Everything goes through durable on-disk queues: while you are offline, signed out, or over a plan limit, frames and events wait and go up once that clears.
+
+NINA import is part of Focale's Observer plan and above.
+
+Privacy: you sign in with your Focale account. The refresh token is stored encrypted with Windows DPAPI; the access token stays in memory. Only the saved image files and, if enabled, the night's events are sent - no NINA profile, settings or log files.")]
 [assembly: AssemblyMetadata("FeaturedImageURL",        "https://focale.space/img/nina-plugin-featured.png")]
 [assembly: AssemblyMetadata("ScreenshotURL",           "https://focale.space/img/nina-plugin-screenshot-1.png")]
 [assembly: AssemblyMetadata("AltScreenshotURL",        "https://focale.space/img/nina-plugin-screenshot-2.png")]

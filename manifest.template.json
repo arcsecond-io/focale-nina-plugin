@@ -18,17 +18,18 @@
     "Cloud",
     "Upload",
     "FITS",
-    "XISF"
+    "XISF",
+    "Logbook"
   ],
   "MinimumApplicationVersion": {
     "Major": "3",
-    "Minor": "3",
+    "Minor": "2",
     "Patch": "0",
     "Build": "0"
   },
   "Descriptions": {
-    "ShortDescription": "Uploads every FITS / XISF frame NINA saves to Focale, which rebuilds your nights, targets and equipment from the file headers.",
-    "LongDescription": "Bridges N.I.N.A. to Focale (https://focale.space).\n\nEvery FITS or XISF frame NINA saves is uploaded to Focale in the background. Focale reads the file header and files the frame under the right night, site, telescope, camera and target, as an observation or a calibration frame, with image metrics computed server-side.\n\nUploads go through a durable on-disk queue: frames wait while you are offline, signed out, or over a plan limit, and go up once that clears. A frame is only given up when Focale refuses that specific file.\n\nPrivacy: you sign in with your Focale account. The refresh token is stored encrypted with Windows DPAPI; the access token stays in memory. Only the saved image files are sent - no NINA profile, settings or logs. Automatic upload can be turned off at any time.",
+    "ShortDescription": "Sends every FITS / XISF frame and what happens during the night (autofocus, flips, guiding RMS) from N.I.N.A. 3.2 and 3.3 to Focale.",
+    "LongDescription": "Bridges N.I.N.A. to Focale (https://focale.space). Works with NINA 3.2 and 3.3.\n\nFrames: every FITS or XISF frame NINA saves is sent to Focale, which reads its header and files it under the right night, site, telescope, camera and target, with image metrics computed server-side. You choose what happens to the pixels: index only (the file stays on your computer), Focale storage, or one of your own storages (S3, SFTP, SMB). Nothing is uploaded until you choose.\n\nNight events: the sequence, autofocus runs, meridian flips, guiding RMS per exposure, dithers, park and safety changes are sent to the same night, and shown on its Logbook timeline.\n\nEverything goes through durable on-disk queues: while you are offline, signed out, or over a plan limit, frames and events wait and go up once that clears.\n\nNINA import is part of Focale's Observer plan and above.\n\nPrivacy: you sign in with your Focale account. The refresh token is stored encrypted with Windows DPAPI; the access token stays in memory. Only the saved image files and, if enabled, the night's events are sent - no NINA profile, settings or log files.",
     "FeaturedImageURL": "https://focale.space/img/nina-plugin-featured.png",
     "ScreenshotURL": "https://focale.space/img/nina-plugin-screenshot-1.png",
     "AltScreenshotURL": "https://focale.space/img/nina-plugin-screenshot-2.png"

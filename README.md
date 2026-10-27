@@ -1,15 +1,20 @@
 # Focale.NINA.Plugin
 
-A NINA plugin that bridges N.I.N.A. to [Focale](https://focale.space) (the same backend as `api.arcsecond.io`):
+A NINA plugin that bridges N.I.N.A. to [Focale](https://focale.space) (the same backend as `api.arcsecond.io`). It implements the **NINA import** line of Focale's pricing table (Observer plan and above):
 
-- **Automatic frame upload** — every FITS or XISF frame NINA saves is uploaded to Focale in the background. Focale reads the file header and files it under the right night, site, telescope, camera and target, as an observation or a calibration frame, with image metrics computed server-side. NINA's TIFF and RAW saves are skipped.
-- **Durable queue** — uploads go through an on-disk SQLite queue that survives network drops and NINA restarts. Frames wait while you are offline, signed out, or over a plan limit, and go up once that clears. A frame is only given up (dead-lettered) when Focale refuses that specific file, or when the file is deleted or modified before it is sent.
+- **Frames** — every FITS or XISF frame NINA saves goes to Focale, which reads the header and files it under the right night, site, telescope, camera and target, as an observation or a calibration frame, with image metrics computed server-side. NINA's TIFF and RAW saves are skipped.
+- **Where the pixels go** — chosen in the settings page, once; nothing is uploaded until then:
+  - *Index only*: the file stays on your computer; Focale keeps the metadata and measurements (no storage used).
+  - *Focale storage*: a copy is kept in Focale (counts against your plan's storage).
+  - *My own storage*: a copy goes to one of your Focale-connected storages that can receive uploads (S3, SFTP, SMB, local disk — not Dropbox or FTP, which Focale only scans).
+- **Night events** — the sequence, autofocus runs (position, temperature, filter; failed runs too), meridian flips, guiding RMS over each exposure, dithers, park/unpark and safety changes are recorded as they happen and filed under the night log Focale put that night's frames in. They make the session timeline of Focale's Logbook. Can be turned off.
+- **Durable queues** — frames and events are kept on disk (SQLite) and survive network drops and NINA restarts. While you are offline, signed out, over a plan limit, or your chosen storage is refused, they wait and go up once that clears. A frame is only given up when Focale refuses that specific file, or when it was deleted or modified before it was sent.
 
-The plugin does not (yet) send NINA sequences, profiles or logs, and does not receive anything from Focale. See the [Focale feature table](https://focale.space) for what is planned.
+The plugin does not send NINA profiles, settings or log files, and does not receive anything from Focale yet (pushing targets and exposure plans to NINA, and smart scheduling, are the next phases).
 
 ## Status
 
-Pre-release, not yet submitted to the NINA plugin registry. Requires NINA 3.3 or later (the plugin is built for .NET 10, like NINA 3.3); NINA 3.2 and earlier cannot load it. See [BUILD.md](BUILD.md) for build/test instructions and [ENDPOINT_MAPPING.md](ENDPOINT_MAPPING.md) for how the plugin maps NINA concepts onto existing arcsecond-back resources.
+Pre-release, not yet submitted to the NINA plugin registry. Works with NINA 3.2 and 3.3: the shipped build targets .NET 8 against NINA 3.2, which NINA 3.3 (.NET 10) loads as well; CI also compiles the code against NINA 3.3 so an API change there breaks the build. See [BUILD.md](BUILD.md) for build/test instructions and [ENDPOINT_MAPPING.md](ENDPOINT_MAPPING.md) for how the plugin maps NINA concepts onto existing arcsecond-back resources.
 
 ## Install
 
@@ -25,8 +30,8 @@ Pre-release, not yet submitted to the NINA plugin registry. Requires NINA 3.3 or
 - The plugin signs in with your Focale username + password and receives a JWT access/refresh pair. The access token lives in memory only and is auto-refreshed; the refresh token is the long-lived secret and is stored **encrypted at rest** using Windows DPAPI (`DataProtectionScope.CurrentUser`).
 - The plugin sends `X-Focale-Client: nina-plugin` on every request. Server-side, that gives the plugin its own session bucket — revoking the plugin from your account settings does **not** affect your web/desktop sessions, and vice-versa.
 - All HTTPS calls use the .NET default TLS stack with certificate validation enabled. The plugin never disables TLS verification.
-- Only the saved image files are sent — no NINA profile, settings or logs. Nothing leaves your machine until you sign in and leave automatic upload enabled.
-- Transient HTTP errors and network drops are retried silently; the plugin does **not** spam UI toasts. A plan or quota refusal (HTTP 402/403/507) pauses the queue for an hour, with the server's reason and a **Resume uploads** button in the plugin's settings page.
+- Only the saved image files and, if enabled, the night's events (times, autofocus positions, guiding RMS, …) are sent — no NINA profile, settings or log files. Nothing leaves your machine until you sign in and choose where frames go.
+- Transient HTTP errors and network drops are retried silently; the plugin does **not** spam UI toasts. A plan or quota refusal (HTTP 402/403/507, e.g. NINA import on the Free plan, or the plan's indexed-files or storage limit) or a refused destination storage pauses the queue for an hour, with the reason and a **Resume uploads** button in the plugin's settings page.
 
 ## License
 

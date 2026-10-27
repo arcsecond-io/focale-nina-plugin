@@ -2,92 +2,62 @@
 
 ## Targets
 
-Both the plugin and its test project target `net10.0-windows` because the plugin uses WPF (XAML, `PasswordBox`, `ResourceDictionary` merging) and Windows-only APIs (`System.Security.Cryptography.ProtectedData` for DPAPI). NINA itself is Windows-only, so there's no runtime path for a non-Windows build.
+The plugin and its tests build for two targets:
 
-That said, you do **not** need a Windows machine to develop. .NET 10 SDK supports `EnableWindowsTargeting=true`, which lets `dotnet build` cross-compile WPF assemblies on macOS / Linux against downloaded reference assemblies. You can write code, run the cross-platform unit tests, and commit. End-to-end testing inside NINA itself does need a Windows host.
+| Target | NINA references | Purpose |
+|---|---|---|
+| `net8.0-windows` | NINA 3.2 (`NINA.Plugin` 3.2.0.9001) | **The build we ship.** NINA 3.3 runs on .NET 10, which loads .NET 8 assemblies, so this one build serves NINA 3.2 and 3.3. |
+| `net10.0-windows` | NINA 3.3 (`NINA.Plugin` 3.3.0.x-nightly) | Never shipped. It makes the build fail as soon as the code uses an API NINA 3.3 changed or removed. |
 
----
+Compiling against 3.3 catches source breaks, not binary ones (a NINA method that gained an optional parameter still compiles, but the 3.2 build's call no longer binds in 3.3). So CI also runs [`tools/NinaCompatCheck`](tools/NinaCompatCheck/Program.cs) on the shipped DLL: it resolves every NINA type and member the build references, signatures included, against NINA 3.3's assemblies, and fails on the first missing one.
+
+```bash
+dotnet run --project tools/NinaCompatCheck -c Release -- \
+  src/Focale.NINA.Plugin/bin/Release/net8.0-windows/Focale.NINA.Plugin.dll \
+  tests/Focale.NINA.Plugin.Tests/bin/Release/net10.0-windows
+```
+
+(On macOS, add the Windows Desktop reference assemblies as a third argument, e.g. `~/.nuget/packages/microsoft.windowsdesktop.app.ref/10.0.x/ref/net10.0`.) When a NINA API exists in 3.3 only — `IImageSaveMediator.ImageSaveFailed`, for one — the plugin cannot use it.
+
+NINA's assemblies come from its NuGet packages. The plugin compiles against them with `ExcludeAssets="runtime"`: NINA provides them at runtime, and so does it for `Newtonsoft.Json`, MEF (`System.ComponentModel.Composition`) and `CommunityToolkit.Mvvm`, which are pinned to the exact versions each NINA release depends on. The plugin's [`Export`] attributes must be the very MEF types NINA's container looks for, so the plugin never ships its own copy. Only `Microsoft.Data.Sqlite` (the upload queue) ships with the plugin.
+
+WPF and DPAPI make both targets Windows-only.
 
 ## Prerequisites
 
 | Need | Install |
 |---|---|
-| .NET 10 SDK | https://dotnet.microsoft.com/download/dotnet/10.0 |
-| (optional) NINA install | https://nighttime-imaging.eu/download/ — only needed to populate `lib/nina/` for the actual plugin build, and for end-to-end testing |
+| .NET 10 SDK | https://dotnet.microsoft.com/download/dotnet/10.0 — builds both targets |
+| .NET 8 runtime (Windows) | to run the `net8.0-windows` tests |
+| NINA 3.2 or 3.3 (Windows) | only for end-to-end testing |
 
-## Quick checks (works on macOS / Linux / Windows)
-
-```bash
-# Restore packages.
-dotnet restore Focale.NINA.Plugin.sln
-
-# Build & run the cross-platform tests (everything but the DPAPI fixture).
-# The DPAPI fixture is gated with [Platform("Win")] and skipped automatically off-Windows.
-dotnet test tests/Focale.NINA.Plugin.Tests/Focale.NINA.Plugin.Tests.csproj
-```
-
-You will see `SecretProtectorTests` reported as `Skipped` on macOS — that's expected.
-
----
-
-## Building the plugin DLL itself
-
-The plugin references NINA host assemblies (`NINA.Plugin.dll`, `NINA.Core.dll`, etc.) as `<Reference HintPath="..." Private="false">`. They are **not** copied into the plugin output (NINA provides them at runtime). You need them on disk to compile.
-
-### Option 1 — local NINA install (Windows or macOS via Wine/CrossOver)
-
-Install NINA, then either copy its install folder DLLs into `lib/nina/`, or point `NinaBinPath` at the install location:
+## Build
 
 ```bash
-dotnet build src/Focale.NINA.Plugin/Focale.NINA.Plugin.csproj \
-    -c Release \
-    -p:NinaBinPath="/path/to/N.I.N.A. - Nighttime Imaging 'N' Astronomy/"
+dotnet build src/Focale.NINA.Plugin/Focale.NINA.Plugin.csproj -c Release
 ```
 
-### Option 2 — extract NINA reference DLLs from the installer
+This works on macOS and Linux too (`EnableWindowsTargeting=true`): it compiles both targets, XAML included.
 
-NINA's MSI/EXE installer ships the host assemblies inside. A short script can extract them into `lib/nina/`. There is **no published "reference assemblies" NuGet** for NINA, so this is the canonical path for CI.
+## Test
 
-Configure a repo variable `NINA_REF_URL` pointing at a hosted zip of the relevant DLLs; the [release workflow](.github/workflows/release.yml) consumes it.
+```bash
+dotnet test tests/Focale.NINA.Plugin.Tests/Focale.NINA.Plugin.Tests.csproj -c Release
+```
 
-### Option 3 — let GitHub Actions build for you (recommended on macOS)
+The tests need the Windows Desktop runtime, so they run on Windows only (CI runs them on `windows-latest`, for both targets). The DPAPI fixture is gated with `[Platform("Win")]`.
 
-Push your branch. The CI workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on `windows-latest` with the .NET 10 SDK pre-installed and runs the test suite. The release workflow ([`.github/workflows/release.yml`](.github/workflows/release.yml)) triggers on a `v*` tag, builds the plugin against the staged NINA references, packages a zip, and stamps the manifest with the SHA-256.
+On macOS the test runner fails with "Framework: 'Microsoft.WindowsDesktop.App' … No frameworks were found": that is expected. Most tests are pure logic; to run those locally, point a scratch `net10.0` NUnit project at the test sources (`<Compile Include="…/tests/Focale.NINA.Plugin.Tests/*.cs" />`) and at the built `Focale.NINA.Plugin.dll`, with `AssemblyName` set to `Focale.NINA.Plugin.Tests` so `InternalsVisibleTo` applies.
 
-This is the path with the least friction for a macOS-based developer. You write and run cross-platform tests locally; CI handles the Windows-targeted full build.
+## Release
 
----
+Pushing a `vMAJOR.MINOR.PATCH.BUILD` tag runs [`release.yml`](.github/workflows/release.yml): it publishes the `net8.0-windows` build, zips an allowlist (the plugin, `Microsoft.Data.Sqlite`, `SQLitePCLRaw` and its Windows native libraries), stamps `manifest.json` with the version and the zip's SHA-256 ([`scripts/build-manifest.ps1`](scripts/build-manifest.ps1)), and attaches both to a GitHub Release. Submitting the manifest to the NINA plugin registry is manual.
 
-## Smoke-testing the plugin inside NINA (Windows host required)
+## Smoke-testing inside NINA (Windows)
 
-1. Build the plugin: `dotnet publish src/Focale.NINA.Plugin -c Release -o out/`.
-2. Copy the output into NINA's plugin folder:
-   ```pwsh
-   Copy-Item out\* "$env:LOCALAPPDATA\NINA\Plugins\3.3.0\Focale\" -Recurse
-   ```
-   (Adjust the version segment to match your NINA install; see [`NINA.Plugin/Constants.cs:26`](../nina/NINA.Plugin/Constants.cs).)
-3. Launch NINA. Open **Options → Plugins → Focale**.
-4. Sign in with your Focale credentials. The plugin authenticates against `api.focale.space` (or whatever you set in the Server URL field).
-5. Connect a simulated camera + mount and capture a frame. Watch the upload queue counter go from 1 → 0.
+1. `dotnet publish src/Focale.NINA.Plugin -c Release -f net8.0-windows -o out/`
+2. Copy `Focale.NINA.Plugin.dll`, `Microsoft.Data.Sqlite.dll`, `SQLitePCLRaw.*.dll` and `runtimes\win-x64\` from `out\` into `%LOCALAPPDATA%\NINA\Plugins\<NINA version>\Focale\` (e.g. `3.2.0`).
+3. Launch NINA, open **Options → Plugins → Focale**, choose a storage mode and sign in.
+4. Connect a simulated camera and mount, capture a frame, and watch the upload queue go from 1 to 0.
 
-For a developer loop without rebuilding NINA: run NINA as usual; rebuild only the plugin DLL; replace the file in `Plugins\3.3.0\Focale\`; relaunch NINA.
-
----
-
-## Working on macOS day-to-day
-
-**What works locally:**
-- Editing C# / XAML in your IDE (Rider, VS Code, JetBrains Fleet).
-- Running `dotnet restore`, `dotnet build` (with `NinaBinPath` set or `lib/nina/` populated, otherwise the plugin csproj will fail with missing references — but the test csproj only depends on the plugin's *own* code, which works).
-- Running cross-platform unit tests (Redaction, UploadQueue, UploadWorker.Backoff).
-
-**What needs Windows:**
-- Compiling the plugin DLL with WPF (you can do this on macOS via `EnableWindowsTargeting=true`, but you cannot *run* it).
-- The DPAPI test fixture (auto-skipped via `[Platform("Win")]`).
-- Loading the plugin into NINA.
-
-If you don't have a Windows machine handy:
-- A free Windows 11 dev VM image (Microsoft publishes one at https://developer.microsoft.com/windows/downloads/virtual-machines/) runs comfortably under Parallels / UTM / VMware Fusion.
-- Or push to a branch and use the CI artifact for hands-off builds. The release workflow produces a downloadable zip you can install into a Windows VM.
-
-The trade-off is intentional: WPF is a Windows-only stack and we're not going to fight that. The plugin contracts (Settings, Api, Sync, Upload) are all kept in non-WPF files so they stay testable cross-platform.
+Do this on NINA 3.2 and on a NINA 3.3 nightly: the shipped build must load in both.

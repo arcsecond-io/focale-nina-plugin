@@ -14,47 +14,35 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The .NET 10 SDK builds both targets; the .NET 8 runtime (preinstalled on
+      # windows-latest, pinned here anyway) runs the NINA 3.2 test build.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
-      # The test project transitively builds the plugin DLL, which references NINA's host
-      # assemblies. Fetch them from the same zip the release workflow uses, gated by the
-      # NINA_REF_URL repo variable. Without it, the test job is skipped (not failed) so a
-      # fresh fork can run the workflow and see a clear "configure NINA_REF_URL" status.
-      - name: Stage NINA reference assemblies
-        if: env.NINA_REF_URL != ''
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path lib/nina -Force | Out-Null
-          Invoke-WebRequest -Uri $env:NINA_REF_URL -OutFile nina-bin.zip
-          Expand-Archive -Path nina-bin.zip -DestinationPath lib/nina -Force
-        env:
-          NINA_REF_URL: ${{ vars.NINA_REF_URL }}
-
+      # NINA's assemblies come from its NuGet packages (NINA.Plugin): 3.2 for the
+      # shipped net8.0-windows build, 3.3 for the net10.0-windows check build.
       - name: Restore
-        if: env.NINA_REF_URL != ''
         run: dotnet restore Focale.NINA.Plugin.sln
-        env:
-          NINA_REF_URL: ${{ vars.NINA_REF_URL }}
 
-      - name: Build & test
-        if: env.NINA_REF_URL != ''
+      - name: Build & test (NINA 3.2 and 3.3)
         run: |
           dotnet test tests/Focale.NINA.Plugin.Tests/Focale.NINA.Plugin.Tests.csproj `
             --configuration Release `
-            --logger "trx;LogFileName=test-results.trx" `
+            --logger "trx;LogFilePrefix=test-results" `
             --collect:"XPlat Code Coverage"
-        env:
-          NINA_REF_URL: ${{ vars.NINA_REF_URL }}
 
-      - name: Skipped — NINA_REF_URL not configured
-        if: env.NINA_REF_URL == ''
+      # The shipped build is the net8.0-windows one (NINA 3.2 references). Make sure every NINA
+      # type and member it uses still exists, signature included, in NINA 3.3 — which loads it
+      # too. The net10.0-windows test build holds NINA 3.3 and its dependencies.
+      - name: Binary compatibility with NINA 3.3
         run: |
-          echo "::warning::Set the NINA_REF_URL repository variable to a zip of NINA's host DLLs to enable CI builds."
-        env:
-          NINA_REF_URL: ${{ vars.NINA_REF_URL }}
+          dotnet run --project tools/NinaCompatCheck -c Release -- `
+            src/Focale.NINA.Plugin/bin/Release/net8.0-windows/Focale.NINA.Plugin.dll `
+            tests/Focale.NINA.Plugin.Tests/bin/Release/net10.0-windows
 
       - name: Upload test results
         if: always()
