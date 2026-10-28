@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -262,6 +263,25 @@ public sealed class FocaleApiClient : IDisposable {
         var rows = token is JObject page && page["results"] is JArray results ? results : token as JArray;
         var storages = rows?.ToObject<List<DataStorageResponse>>() ?? new List<DataStorageResponse>();
         return storages.FindAll(s => s.CanReceiveUploads);
+    }
+
+    /// <summary>
+    /// The exposure plan of the user's night plan for <paramref name="nightDate"/> (yyyy-MM-dd), or
+    /// null when that night has no plan. Focale's Tonight keeps one plan per night.
+    /// </summary>
+    public async Task<ExposurePlanResponse?> GetExposurePlanAsync(string nightDate, CancellationToken ct) {
+        using var list = await _http.GetAsync(BuildUri(FocaleEndpoints.NightPlans + "?date=" + Uri.EscapeDataString(nightDate)), ct)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(list).ConfigureAwait(false);
+        var token = JToken.Parse(await list.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var rows = token is JObject page && page["results"] is JArray results ? results : token as JArray;
+        var uuid = rows?.FirstOrDefault()?["uuid"]?.ToString();
+        if (string.IsNullOrEmpty(uuid)) return null;
+
+        using var resp = await _http.GetAsync(BuildUri(string.Format(FocaleEndpoints.NightPlanExposures, uuid)), ct)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(resp).ConfigureAwait(false);
+        return JsonConvert.DeserializeObject<ExposurePlanResponse>(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
     }
 
     /// <summary>Files a batch of events under a night log. Idempotent: the server keys them on their client ids.</summary>

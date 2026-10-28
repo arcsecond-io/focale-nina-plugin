@@ -1,0 +1,54 @@
+<UserControl x:Class="Focale.NINA.Plugin.Ui.FocaleTonightView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="500" d:DesignWidth="360">
+    <DockPanel Margin="6">
+        <StackPanel DockPanel.Dock="Top">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshCommand}" Margin="6,0,0,0" />
+                <TextBlock VerticalAlignment="Center" FontWeight="Bold" Text="{Binding NightLabel}" />
+            </DockPanel>
+            <DockPanel Margin="0,6,0,0">
+                <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,6,0" Text="Template" />
+                <ComboBox ItemsSource="{Binding Templates}" SelectedItem="{Binding SelectedTemplate, Mode=TwoWay}"
+                          ToolTip="The target template each planned target is built from: its slew, centering, autofocus and dithering are kept; its Smart Exposures are replaced by the plan's lines." />
+            </DockPanel>
+            <TextBlock Margin="0,6,0,6" TextWrapping="Wrap" Opacity="0.8" Text="{Binding Status}" />
+        </StackPanel>
+        <Button DockPanel.Dock="Bottom" Margin="0,6,0,0" Content="Add all to the sequence" Command="{Binding AddAllCommand}" />
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Entries}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Margin="0,0,0,6" Padding="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" VerticalAlignment="Top" Margin="6,0,0,0" Content="Add"
+                                        Command="{Binding AddCommand}" IsEnabled="{Binding CanAdd}" />
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Opacity="0.7" Text="{Binding Time}" />
+                                        <TextBlock FontWeight="Bold" Text="{Binding Name}" />
+                                    </DockPanel>
+                                    <TextBlock TextWrapping="Wrap" Text="{Binding Summary}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasWarning}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource NotificationWarningBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

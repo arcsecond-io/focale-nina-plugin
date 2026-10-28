@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Focale Tonight dock panel (NINA push): reads tonight's night plan and its exposure lines
+  (`GET /nightplans/?date=`, `GET /nightplans/<uuid>/exposures/`) and builds Advanced Sequencer
+  targets from a NINA target template the user picks (remembered per profile): target name,
+  J2000 coordinates and position angle set, Smart Exposures replaced by one per line (filter by
+  name, exposure, binning, count). "Add" per target and "Add all".
 - NINA 3.2 support: the plugin builds for `net8.0-windows` against NINA 3.2 (the shipped build,
   which NINA 3.3 also loads) and for `net10.0-windows` against NINA 3.3 (a CI check only).
   NINA's assemblies now come from its NuGet packages; `NINA_REF_URL` is gone. CI also runs

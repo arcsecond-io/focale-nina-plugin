@@ -19,4 +19,12 @@
         <ui:FocaleOptionsView DataContext="{Binding OptionsViewModel}" />
     </DataTemplate>
 
+    <!--
+        A dock panel's view is looked up as "<full type name of its view model>_Dockable"
+        (NINA plugin template, docs/ui-and-settings.md).
+    -->
+    <DataTemplate x:Key="Focale.NINA.Plugin.Ui.FocaleTonightDockable_Dockable">
+        <ui:FocaleTonightView />
+    </DataTemplate>
+
 </ResourceDictionary>

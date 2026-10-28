@@ -64,6 +64,8 @@ public sealed class FocalePlugin : PluginBase {
             var pluginId = Guid.Parse(Identifier);
             _settings = new FocaleSettings(pluginId, _profileService.ActiveProfile.PluginSettings);
             _api      = new FocaleApiClient(_settings);
+            FocaleRuntime.Settings = _settings;
+            FocaleRuntime.Api      = _api;
 
             var dataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

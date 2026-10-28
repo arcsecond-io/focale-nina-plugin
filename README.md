@@ -10,7 +10,11 @@ A NINA plugin that bridges N.I.N.A. to [Focale](https://focale.space) (the same 
 - **Night events** — the sequence, autofocus runs (position, temperature, filter; failed runs too), meridian flips, guiding RMS over each exposure, dithers, park/unpark and safety changes are recorded as they happen and filed under the night log Focale put that night's frames in. They make the session timeline of Focale's Logbook. Can be turned off.
 - **Durable queues** — frames and events are kept on disk (SQLite) and survive network drops and NINA restarts. While you are offline, signed out, over a plan limit, or your chosen storage is refused, they wait and go up once that clears. A frame is only given up when Focale refuses that specific file, or when it was deleted or modified before it was sent.
 
-The plugin does not send NINA profiles, settings or log files, and does not receive anything from Focale yet (pushing targets and exposure plans to NINA, and smart scheduling, are the next phases).
+It also implements **NINA push** (Imager plan and above):
+
+- **Focale Tonight panel** — a dock panel in NINA lists tonight's plan from Focale's Tonight: each target with its time and exposure lines (filter × exposure × count, binning). Pick one of your own NINA target templates once; "Add" builds a target from it — the template is cloned, its target set (name, J2000 coordinates, position angle), and its Smart Exposures replaced by one per planned line (filters matched by name in your filter wheel, never guessed) — and adds it to the Advanced Sequencer. "Add all" does the whole night. Nothing changes in your sequence unless you click. Gain and offset come from the template.
+
+The plugin does not send NINA profiles, settings or log files. Smart scheduling is the next phase.
 
 ## Status
 

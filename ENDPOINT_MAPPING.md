@@ -110,6 +110,21 @@ POST /nightlogs/<night_log_uuid>/events/
 
 Events are kept in `%LOCALAPPDATA%\NINA\PluginData\Focale\events.db` and sent in batches of up to 200, idempotently (`client_id` is unique per night log, so a retried batch files nothing twice). An event belongs to the night (local noon to noon) its start falls in, and waits until an upload has reported that night's log; events of nights with no uploaded frame are dropped after 7 days. Writing events is the same `nina_import` plan gate; reading them (the Logbook timeline) is not gated. `image_save_failed` exists on the back-end but is not sent: NINA's `ImageSaveFailed` is 3.3-only.
 
+## NINA push (Focale Tonight panel)
+
+```
+GET /nightplans/?date=2026-10-28           → the user's night plan of that night (Focale's Tonight; the first)
+GET /nightplans/<uuid>/exposures/          → its entries, in order:
+  {"night_plan", "date", "entries": [
+     {"uuid", "index", "name", "start", "duration_seconds", "status", "position_angle",
+      "target": {"id", "name", "target_class", "right_ascension", "declination"},   (J2000, degrees)
+      "lines": [{"filter": "Ha", "exposure_seconds": 300, "count": 20, "binning": 1}]}]}
+```
+
+The lines are written in Focale's Tonight (PUT `/nightplans/<uuid>/exposures/<target_id>/`, Imager plan and up) and kept on the back-end as an observing sequence N.I.N.A. runs (`executor = nina`), which Focale's own engine never starts.
+
+Per entry the plugin plans (`Push/TargetPlanner`): filters are matched by name in the active profile's filter wheel (case and punctuation aside, never guessed; unmatched lines are left out and shown); a target without fixed coordinates (a planet, a comet) cannot be added; an entry without lines keeps the template's exposures. Then it builds (`Push/NinaTargetBuilder`): the chosen template is cloned, its target set (name, J2000 coordinates, position angle), its Smart Exposures replaced by clones of the first one, one per line (filter, exposure time, binning, loop count), and `ISequenceMediator.AddAdvancedTarget` adds it. Gain and offset stay the template's.
+
 ## Equipment
 
 Equipment is auto-registered server-side from the FITS header on auto-ingest — `TELESCOP` becomes a `Telescope` row (with `TelescopeModel` linked when the resolver matches), `INSTRUME` becomes a `Camera` row (with `CameraModel`). The plugin itself does not POST to `/equipments/<type>/` endpoints.

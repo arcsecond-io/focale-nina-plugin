@@ -22,6 +22,7 @@ public sealed class FocaleSettings {
     private const string KeyStorageMode           = "Upload.StorageMode";
     private const string KeyDestinationUuid       = "Upload.DestinationStorage.Uuid";
     private const string KeyDestinationName       = "Upload.DestinationStorage.Name";
+    private const string KeyTonightTemplate       = "Tonight.TemplateName";
 
     public const string DefaultServerUrl = "https://api.focale.space";
 
@@ -74,6 +75,12 @@ public sealed class FocaleSettings {
     public string? DestinationStorageName {
         get => _store.TryGetValue(_pluginId, KeyDestinationName, out string v) && !string.IsNullOrEmpty(v) ? v : null;
         set => _store.SetValue(_pluginId, KeyDestinationName, value ?? string.Empty);
+    }
+
+    /// <summary>The NINA target template the Focale Tonight panel builds targets from (by name).</summary>
+    public string? TonightTemplateName {
+        get => _store.TryGetValue(_pluginId, KeyTonightTemplate, out string v) && !string.IsNullOrEmpty(v) ? v : null;
+        set => _store.SetValue(_pluginId, KeyTonightTemplate, value ?? string.Empty);
     }
 
     public string? Username {
