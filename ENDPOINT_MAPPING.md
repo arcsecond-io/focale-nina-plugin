@@ -30,6 +30,7 @@ POST /datafiles/
   ─ auto_ingest:  true
   ─ persist_file: true | false       (false in "index only" mode)
   ─ destination:  <storage uuid>     ("my own storage" mode only)
+  ─ relative_path: 2026-10-27/M31/LIGHT/M31_0001.fits   ("my own storage" mode only: the path below NINA's image folder)
   ─ source:       observer_console
 ```
 
@@ -78,7 +79,7 @@ Chosen once in the settings page; until then nothing is uploaded and frames wait
 |---|---|---|
 | Index only | `persist_file=false` | Every row (night, target, observation, metrics) — not the pixels. No storage used. |
 | Focale storage | `persist_file=true` | The file too, on Focale's cloud storage (counts against the plan). |
-| My own storage | `persist_file=true`, `destination=<uuid>` | The file too, on the user's storage. Listed from `GET /datastorages/`, keeping writable S3, SFTP, SMB and local-disk storages (the back-end does not write to Dropbox or FTP). |
+| My own storage | `persist_file=true`, `destination=<uuid>`, `relative_path` | The file too, on the user's storage, as `Focale/<relative_path>` under its root (NINA's folders kept; scans skip `Focale/`). Listed from `GET /datastorages/`, keeping those with `can_receive_uploads` (S3, SFTP, SMB, FTP, and Dropbox connected with "Connect Dropbox" — a pasted Dropbox token expires in four hours). |
 
 The upload response's `ingestion.night_log` (`{uuid, date}`) is remembered per night date for the night events below.
 

@@ -104,7 +104,10 @@ public enum StorageMode {
     Unset = 0,
     /// <summary>Focale indexes the frame and keeps its pixels in Focale's cloud storage (counts against the plan's storage).</summary>
     FocaleStorage = 1,
-    /// <summary>Focale indexes the frame and stores its pixels in one of the user's own storages (S3, SFTP, SMB).</summary>
+    /// <summary>
+    /// Focale indexes the frame and copies it to one of the user's own storages (S3, SFTP, SMB, FTP,
+    /// Dropbox), as Focale/&lt;its path below NINA's image folder&gt; under the storage's root.
+    /// </summary>
     OwnStorage = 2,
     /// <summary>Focale indexes the frame and computes its metrics, then discards the pixels. The file stays on this machine only.</summary>
     IndexOnly = 3,

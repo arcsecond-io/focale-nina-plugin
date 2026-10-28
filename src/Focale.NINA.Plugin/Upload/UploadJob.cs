@@ -31,6 +31,12 @@ public sealed class UploadJob {
     /// </summary>
     public FrameClass FrameClass { get; set; }
 
+    /// <summary>
+    /// The frame's path below NINA's image folder (see <see cref="Common.RelativePath"/>), sent
+    /// with uploads to the user's own storage so Focale keeps NINA's folders there.
+    /// </summary>
+    public string? RelativePath { get; set; }
+
     public DateTime EnqueuedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime NotBeforeUtc { get; set; } = DateTime.UtcNow;
     public int Attempt { get; set; }

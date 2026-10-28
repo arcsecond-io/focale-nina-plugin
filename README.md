@@ -6,7 +6,7 @@ A NINA plugin that bridges N.I.N.A. to [Focale](https://focale.space) (the same 
 - **Where the pixels go** — chosen in the settings page, once; nothing is uploaded until then:
   - *Index only*: the file stays on your computer; Focale keeps the metadata and measurements (no storage used).
   - *Focale storage*: a copy is kept in Focale (counts against your plan's storage).
-  - *My own storage*: a copy goes to one of your Focale-connected storages that can receive uploads (S3, SFTP, SMB, local disk — not Dropbox or FTP, which Focale only scans).
+  - *My own storage*: a copy goes to one of your Focale-connected storages (S3, SFTP, SMB, FTP, or Dropbox connected with "Connect Dropbox"), as `Focale/<the frame's path below NINA's image folder>` under the storage's root — NINA's own date/target/… folders are kept, and Focale's scans of that storage skip the `Focale/` folder.
 - **Night events** — the sequence, autofocus runs (position, temperature, filter; failed runs too), meridian flips, guiding RMS over each exposure, dithers, park/unpark and safety changes are recorded as they happen and filed under the night log Focale put that night's frames in. They make the session timeline of Focale's Logbook. Can be turned off.
 - **Durable queues** — frames and events are kept on disk (SQLite) and survive network drops and NINA restarts. While you are offline, signed out, over a plan limit, or your chosen storage is refused, they wait and go up once that clears. A frame is only given up when Focale refuses that specific file, or when it was deleted or modified before it was sent.
 

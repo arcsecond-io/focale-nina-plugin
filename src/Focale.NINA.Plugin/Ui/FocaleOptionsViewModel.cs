@@ -169,7 +169,7 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject, IDisposab
         _eventSender.Resume();
     }
 
-    /// <summary>The user's storages Focale can upload to (S3, SFTP, SMB, local disk; not Dropbox or FTP).</summary>
+    /// <summary>The user's storages Focale can upload to (S3, SFTP, SMB, FTP, and Dropbox connected with "Connect Dropbox").</summary>
     [RelayCommand]
     private async Task LoadStoragesAsync() {
         if (!_api.IsAuthenticated) {
@@ -185,7 +185,7 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject, IDisposab
             foreach (var st in storages) Storages.Add(st);
             SelectedStorage = Storages.FirstOrDefault(st => st.Uuid == keep);
             StoragesStatus = storages.Count == 0
-                ? "No storage Focale can upload to. Add an S3, SFTP or SMB storage on focale.space."
+                ? "No storage Focale can upload to. Add one on focale.space (S3, SFTP, SMB, FTP, or Connect Dropbox)."
                 : "";
         } catch (Exception ex) {
             StoragesStatus = $"Could not load your storages: {ex.Message}";

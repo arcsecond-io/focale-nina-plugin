@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`persist_file=false`), Focale storage, or one of the user's own storages (`destination`,
   listed from `GET /datastorages/`, S3/SFTP/SMB/local disk only). A refused destination
   pauses the queue instead of dead-lettering frames.
+- Own storage: any storage the server says `can_receive_uploads` (FTP and Dropbox connected with
+  "Connect Dropbox" included). Each frame's path below NINA's image folder is queued with it
+  (a new `relative_path` column, added to existing queues on start) and sent, so Focale writes
+  the copy as `Focale/<that path>` under the storage's root.
 - Night events: the sequence, autofocus runs (failed ones too), meridian flips, guiding RMS
   per exposure, dithers, park/unpark and safety changes, recorded from NINA's mediators into
   a local SQLite store (`events.db`) and filed in batches under the night log each upload

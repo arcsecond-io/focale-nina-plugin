@@ -161,8 +161,13 @@ public sealed class FocalePlugin : PluginBase {
 
             var sha256 = await UploadWorker.ComputeSha256Async(fileInfo, CancellationToken.None).ConfigureAwait(false);
 
+            string? imageFolder = null;
+            try { imageFolder = _profileService.ActiveProfile?.ImageFileSettings?.FilePath; }
+            catch { /* profile access is best-effort */ }
+
             var job = new UploadJob {
                 LocalPath     = fileInfo.FullName,
+                RelativePath  = RelativePath.Of(fileInfo.FullName, imageFolder),
                 Sha256        = sha256,
                 CaptureLocal  = captureLocal,
                 FrameClass    = frameClass,

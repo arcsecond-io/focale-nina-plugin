@@ -51,12 +51,23 @@ public sealed class UploadQueue : IDisposable {
                     attempt         INTEGER NOT NULL DEFAULT 0,
                     status          INTEGER NOT NULL DEFAULT 0,
                     last_error      TEXT    NULL,
+                    relative_path   TEXT    NULL,
                     UNIQUE(sha256)
                 );
                 CREATE INDEX IF NOT EXISTS ix_upload_jobs_pickup
                     ON upload_jobs(status, not_before_utc);
                 """;
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+            // Queues created before the column existed get it now.
+            using (var info = _conn.CreateCommand()) {
+                info.CommandText = "SELECT COUNT(*) FROM pragma_table_info('upload_jobs') WHERE name = 'relative_path';";
+                if (Convert.ToInt32(await info.ExecuteScalarAsync(ct).ConfigureAwait(false)) == 0) {
+                    using var alter = _conn.CreateCommand();
+                    alter.CommandText = "ALTER TABLE upload_jobs ADD COLUMN relative_path TEXT NULL;";
+                    await alter.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+            }
 
             // Recover any rows stuck in Working from a previous crash.
             using var fix = _conn.CreateCommand();
@@ -75,8 +86,8 @@ public sealed class UploadQueue : IDisposable {
             using var cmd = _conn!.CreateCommand();
             cmd.CommandText = """
                 INSERT INTO upload_jobs (local_path, sha256, capture_local, frame_class,
-                                         enqueued_at_utc, not_before_utc, attempt, status)
-                VALUES ($lp, $sh, $cl, $fc, $en, $nb, 0, 0)
+                                         enqueued_at_utc, not_before_utc, attempt, status, relative_path)
+                VALUES ($lp, $sh, $cl, $fc, $en, $nb, 0, 0, $rp)
                 ON CONFLICT(sha256) DO NOTHING;
                 SELECT id FROM upload_jobs WHERE sha256 = $sh;
                 """;
@@ -86,6 +97,7 @@ public sealed class UploadQueue : IDisposable {
             cmd.Parameters.AddWithValue("$fc", (int)job.FrameClass);
             cmd.Parameters.AddWithValue("$en", job.EnqueuedAtUtc.ToString("O"));
             cmd.Parameters.AddWithValue("$nb", job.NotBeforeUtc.ToString("O"));
+            cmd.Parameters.AddWithValue("$rp", (object?)job.RelativePath ?? DBNull.Value);
             var id = Convert.ToInt64(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false));
             job.Id = id;
             return id;
@@ -105,7 +117,7 @@ public sealed class UploadQueue : IDisposable {
             sel.Transaction = tx;
             sel.CommandText = """
                 SELECT id, local_path, sha256, capture_local, frame_class,
-                       enqueued_at_utc, not_before_utc, attempt, status, last_error
+                       enqueued_at_utc, not_before_utc, attempt, status, last_error, relative_path
                   FROM upload_jobs
                  WHERE status = 0 AND not_before_utc <= $now
                  ORDER BY id ASC
@@ -188,7 +200,7 @@ public sealed class UploadQueue : IDisposable {
             using var cmd = _conn!.CreateCommand();
             cmd.CommandText = """
                 SELECT id, local_path, sha256, capture_local, frame_class,
-                       enqueued_at_utc, not_before_utc, attempt, status, last_error
+                       enqueued_at_utc, not_before_utc, attempt, status, last_error, relative_path
                   FROM upload_jobs WHERE status = 3 ORDER BY id DESC LIMIT $l;
                 """;
             cmd.Parameters.AddWithValue("$l", limit);
@@ -213,6 +225,7 @@ public sealed class UploadQueue : IDisposable {
             Attempt       = r.GetInt32(7),
             Status        = (UploadJobStatus)r.GetInt32(8),
             LastError     = r.IsDBNull(9) ? null : r.GetString(9),
+            RelativePath  = r.IsDBNull(10) ? null : r.GetString(10),
         };
     }
 

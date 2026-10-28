@@ -164,7 +164,7 @@ public sealed class UploadWorker : IDisposable {
                 await IdleAsync(IdlePoll, ct).ConfigureAwait(false);
                 continue;
             }
-            if (UploadFields(_settings) is null) {
+            if (UploadFields(_settings, relativePath: null) is null) {
                 SetState(UploadWorkerState.AwaitingStorageChoice,
                          "Choose where your frames go in the Focale settings. Nothing is uploaded until you do.");
                 await IdleAsync(IdlePoll, ct).ConfigureAwait(false);
@@ -238,7 +238,7 @@ public sealed class UploadWorker : IDisposable {
             // Dataset, ObservingSite, Telescope, Camera, Observation/Calibration, target, and
             // pixel metrics. The sha256 doubles as idempotency key so retried uploads return
             // the existing DataFile rather than duplicating.
-            var extraFields = UploadFields(_settings);
+            var extraFields = UploadFields(_settings, job.RelativePath);
             if (extraFields is null) {
                 // The storage choice was cleared since this frame was claimed.
                 await RequeueAsync(job, job.Attempt, TimeSpan.Zero, "no storage mode").ConfigureAwait(false);
@@ -269,10 +269,15 @@ public sealed class UploadWorker : IDisposable {
     /// The auto-ingest form fields for the user's storage mode, or null while none is chosen
     /// (or own storage is chosen without a storage).
     /// </summary>
-    public static Dictionary<string, string>? UploadFields(FocaleSettings settings) =>
-        UploadFields(settings.StorageMode, settings.DestinationStorageUuid);
+    public static Dictionary<string, string>? UploadFields(FocaleSettings settings, string? relativePath) =>
+        UploadFields(settings.StorageMode, settings.DestinationStorageUuid, relativePath);
 
-    public static Dictionary<string, string>? UploadFields(StorageMode mode, string? destinationUuid) {
+    /// <param name="relativePath">
+    /// The frame's path below NINA's image folder: on the user's own storage, Focale writes the copy as
+    /// Focale/&lt;relativePath&gt; under the storage's root, keeping NINA's folders.
+    /// </param>
+    public static Dictionary<string, string>? UploadFields(StorageMode mode, string? destinationUuid,
+                                                           string? relativePath = null) {
         var fields = new Dictionary<string, string> {
             ["auto_ingest"] = "true",
             ["source"]      = IngestSource,
@@ -289,6 +294,7 @@ public sealed class UploadWorker : IDisposable {
             case StorageMode.OwnStorage when !string.IsNullOrWhiteSpace(destinationUuid):
                 fields["persist_file"] = "true";
                 fields["destination"]  = destinationUuid!;
+                if (!string.IsNullOrWhiteSpace(relativePath)) fields["relative_path"] = relativePath!;
                 return fields;
             default:
                 return null;

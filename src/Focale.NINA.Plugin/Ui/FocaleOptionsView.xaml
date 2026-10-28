@@ -63,7 +63,7 @@
                     <RadioButton GroupName="FocaleStorageMode" IsChecked="{Binding IsFocaleStorage, Mode=TwoWay}" Margin="0,4,0,0"
                                  Content="Focale storage — keep a copy in Focale (counts against your plan's storage)" />
                     <RadioButton GroupName="FocaleStorageMode" IsChecked="{Binding IsOwnStorage, Mode=TwoWay}" Margin="0,4,0,0"
-                                 Content="My own storage — copy it to one of my storages (S3, SFTP, SMB)" />
+                                 Content="My own storage — copy it to one of my storages (S3, SFTP, SMB, FTP, Dropbox), in a Focale folder keeping NINA's folders" />
                     <StackPanel Orientation="Horizontal" Margin="20,6,0,0"
                                 Visibility="{Binding IsOwnStorage, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
                         <ComboBox MinWidth="260" ItemsSource="{Binding Storages}" SelectedItem="{Binding SelectedStorage, Mode=TwoWay}" />

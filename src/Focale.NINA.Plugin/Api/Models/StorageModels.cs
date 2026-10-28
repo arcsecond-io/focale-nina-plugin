@@ -10,12 +10,16 @@ public sealed class DataStorageResponse {
     [JsonProperty("is_read_only")] public bool    IsReadOnly { get; set; }
 
     /// <summary>
-    /// Storage types the back-end can write uploads to (xstorages WRITABLE_STORAGE_TYPES):
-    /// Dropbox and FTP storages are scanned, never written to.
+    /// The back-end's own answer (DataStorage.can_receive_uploads): S3, SFTP, SMB and FTP storages,
+    /// and Dropbox storages connected with "Connect Dropbox". Absent from older servers.
     /// </summary>
-    public static readonly string[] WritableTypes = { "aws_s3", "sftp", "smb", "disk_local" };
+    [JsonProperty("can_receive_uploads")] public bool? CanReceiveUploadsFromServer { get; set; }
 
-    public bool CanReceiveUploads => !IsReadOnly && System.Array.IndexOf(WritableTypes, Type) >= 0;
+    /// <summary>What a server that does not say yet could write to.</summary>
+    private static readonly string[] LegacyWritableTypes = { "aws_s3", "sftp", "smb", "disk_local" };
+
+    public bool CanReceiveUploads =>
+        CanReceiveUploadsFromServer ?? (!IsReadOnly && System.Array.IndexOf(LegacyWritableTypes, Type) >= 0);
 
     public override string ToString() => string.IsNullOrWhiteSpace(Name) ? Uuid : $"{Name} ({Type})";
 }
