@@ -34,7 +34,7 @@ After you sign in, the settings page shows your Focale plan (Free, Observer, Ima
 
 ## Status
 
-Pre-release, not yet submitted to the NINA plugin registry. Works with NINA 3.2 and 3.3: the shipped build targets .NET 8 against NINA 3.2, which NINA 3.3 (.NET 10) loads as well; CI also compiles the code against NINA 3.3 so an API change there breaks the build. See [BUILD.md](BUILD.md) for build/test instructions and [ENDPOINT_MAPPING.md](ENDPOINT_MAPPING.md) for how the plugin maps NINA concepts onto the Focale API.
+Version 1.0.0, submitted to the NINA plugin registry. Works with NINA 3.2 and 3.3: the shipped build targets .NET 8 against NINA 3.2, which NINA 3.3 (.NET 10) loads as well; CI also compiles the code against NINA 3.3 so an API change there breaks the build. See [BUILD.md](BUILD.md) for build/test instructions and [ENDPOINT_MAPPING.md](ENDPOINT_MAPPING.md) for how the plugin maps NINA concepts onto the Focale API.
 
 ## Install
 

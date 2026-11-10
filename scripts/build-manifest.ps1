@@ -3,7 +3,7 @@
   Produces a release-ready manifest.json by stamping version + sha256 into manifest.template.json.
 
 .PARAMETER Version
-  The 4-part version string (e.g. 0.1.0.0). Must match the assembly's AssemblyFileVersion.
+  The 4-part version string (e.g. 1.0.0.0). Must match the assembly's AssemblyFileVersion.
 
 .PARAMETER ZipPath
   Path to the release zip whose SHA-256 checksum will be embedded.

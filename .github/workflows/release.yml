@@ -23,9 +23,12 @@ jobs:
         id: ver
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"      # e.g. v0.1.0.0
+          $tag = "${{ github.ref_name }}"      # e.g. v1.0.0.0
           $v = $tag.TrimStart("v")
           if ($v.Split('.').Count -ne 4) { throw "Tag must be vMAJOR.MINOR.PATCH.BUILD, got $tag" }
+          # The tag, the assembly and the manifest must agree, or NINA would show one version and install another.
+          $asm = Select-String -Path src/Focale.NINA.Plugin/Properties/AssemblyInfo.cs -Pattern 'AssemblyFileVersion\("([0-9.]+)"\)' | ForEach-Object { $_.Matches[0].Groups[1].Value }
+          if ($asm -ne $v) { throw "Tag $tag does not match AssemblyFileVersion $asm" }
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       # Ship the net8.0-windows build (NINA 3.2 references): NINA 3.3 runs on .NET 10 and

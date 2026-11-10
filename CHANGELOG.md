@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-11
+
+First public release, for N.I.N.A. 3.2 and 3.3.
+
 ### Added
 - Focale → NINA plans goes both ways: each target the panel builds starts with a **Focale: mark active**
   step and ends with **Focale: mark done** (Advanced Sequencer category "Focale"), which set the entry's
