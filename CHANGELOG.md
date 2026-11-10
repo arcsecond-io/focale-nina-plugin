@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The two features have names that say which way they go: **NINA → Focale sync** (was "NINA import":
+  frames, sessions and night logs) and **Focale → NINA plans** (was "NINA push"; the dock panel, formerly
+  "Focale Tonight", is now titled so).
+- The user's Focale plan, read from `focale_tier` on `GET /profiles/<username>/` after sign-in and at start,
+  shown on the settings page with what it includes and an **Upgrade** button below Imager. On Free, frames
+  and night events wait in their queues instead of being sent and refused (`NeedsUpgrade` state); the plan
+  is read again every 15 minutes and on **Check my plan again** / **Resume**. The Focale → NINA plans panel
+  says when targets keep the template's exposures (below Imager).
+- Focale look: a navy header with the Focale mark on the settings page, the mark as the dock panel's icon
+  and in its header, Focale's lime accent on each section. A featured image for the plugin listing
+  (`assets/nina-plugin-featured.png`, from `assets/nina-plugin-featured.svg`).
+- A frame Focale already has (`GET /datafiles/?sha256=`) is not sent again.
 - Focale Tonight dock panel (NINA push): reads tonight's night plan and its exposure lines
   (`GET /nightplans/?date=`, `GET /nightplans/<uuid>/exposures/`) and builds Advanced Sequencer
   targets from a NINA target template the user picks (remembered per profile): target name,
@@ -51,6 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI (build + test) and release workflow (zip + manifest stamping).
 
 ### Changed
+- The Focale account (server URL, username, encrypted refresh token) is kept in `account.json` in the
+  plugin's data folder, shared by every NINA profile, instead of in the active profile: switching
+  profiles no longer signs you out. An account kept in a profile is moved there on first start. The
+  storage choice and features follow the active profile when it changes.
+- The API URL moved to an "Advanced" section of the settings page.
+- SHA-256 hashes are sent in lowercase; the unused `idempotency_key` form field is no longer sent.
+- The User-Agent carries the plugin's real version.
 - A frame is no longer dead-lettered for being signed out (401), refused by a plan
   limit or quota (402/403/507) or offline: it stays queued. 401 waits for a sign-in,
   refusals pause the whole queue for an hour, network failures retry every minute
@@ -70,6 +89,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   implemented profile / device / weather snapshots are no longer advertised.
 
 ### Fixed
+- An expired or revoked session (the refresh endpoint answers 400) kept the plugin "signed in" with
+  every frame waiting on "token refresh failed"; it now signs out and asks to sign in again.
+- Sign-in refusals are put in words (wrong password, email not verified, too many attempts, Focale
+  unreachable) instead of showing the raw HTTP error.
+- After a failed sign-in the password box kept its dots while the password had been dropped.
+- The listing's screenshot URLs pointed to images that do not exist; they are left out until there are
+  screenshots.
 - Build: trailing comma in the upload call (`UploadWorker`); CA1416 on the DPAPI calls
   (`GenerateAssemblyInfo` is off, so `SupportedOSPlatform("windows")` is now declared by hand);
   a `Logger.Warning` overload NINA 3.3 does not have; NuGet audit and pruning errors.

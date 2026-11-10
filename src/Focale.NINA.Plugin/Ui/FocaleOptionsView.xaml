@@ -4,62 +4,82 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
-             d:DesignHeight="650" d:DesignWidth="700">
+             d:DesignHeight="800" d:DesignWidth="700">
     <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="12">
-        <StackPanel>
+        <StackPanel MaxWidth="760" HorizontalAlignment="Left">
 
-            <TextBlock FontWeight="Bold" FontSize="16" Margin="0,0,0,8" Text="Focale" />
-            <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
-                       Text="Bridges N.I.N.A. to Focale. Uploads every FITS or XISF frame NINA saves; Focale rebuilds your nights, targets and equipment from the file headers." />
+            <!-- Header: the Focale mark and what the plugin does, on Focale's navy -->
+            <Border Background="{StaticResource FocaleNavyBrush}" CornerRadius="6" Padding="14,12" Margin="0,0,0,14">
+                <DockPanel>
+                    <Image DockPanel.Dock="Left" Source="{StaticResource FocaleLogo}" Width="44" Height="44"
+                           VerticalAlignment="Top" Margin="0,0,14,0" />
+                    <StackPanel DockPanel.Dock="Right" VerticalAlignment="Top" HorizontalAlignment="Right">
+                        <TextBlock Foreground="White" Opacity="0.6" HorizontalAlignment="Right" Text="{Binding VersionLabel, Mode=OneWay}" />
+                        <TextBlock HorizontalAlignment="Right" Margin="0,4,0,0">
+                            <Hyperlink Command="{Binding OpenFocaleCommand}" Foreground="{StaticResource FocaleLimeBrush}">focale.space</Hyperlink>
+                        </TextBlock>
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Foreground="White" FontSize="20" FontWeight="SemiBold" Text="FOCALE" />
+                        <TextBlock Foreground="{StaticResource FocaleLimeBrush}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                   Text="Your observing memory, in step with N.I.N.A." />
+                        <TextBlock Foreground="White" Opacity="0.85" TextWrapping="Wrap" Margin="0,8,0,0">
+                            <Run FontWeight="SemiBold" Text="NINA → Focale sync" />
+                            <Run Text=" — every frame NINA saves, and the night's sessions and logs, fill your Focale memory as you capture (Observer plan and above)." />
+                        </TextBlock>
+                        <TextBlock Foreground="White" Opacity="0.85" TextWrapping="Wrap" Margin="0,4,0,0">
+                            <Run FontWeight="SemiBold" Text="Focale → NINA plans" />
+                            <Run Text=" — tonight's targets and exposure plans from Focale, added to NINA's sequencer from the Focale Tonight panel (Imager plan and above)." />
+                        </TextBlock>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
 
-            <!-- Server -->
-            <GroupBox Header="Server" Margin="0,0,0,8">
-                <StackPanel Margin="8">
-                    <TextBlock Text="API URL" />
-                    <TextBox Text="{Binding ServerUrl, UpdateSourceTrigger=LostFocus}" />
-                    <TextBlock Margin="0,4,0,0" FontStyle="Italic" Foreground="Gray"
-                               Text="Default: https://api.focale.space — same backend as api.arcsecond.io" />
-                </StackPanel>
-            </GroupBox>
+            <!-- Account -->
+            <Border Style="{StaticResource FocaleSection}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource FocaleSectionTitle}" Text="Focale account" />
 
-            <!-- Sign-in -->
-            <GroupBox Header="Sign in" Margin="0,0,0,8">
-                <StackPanel Margin="8">
-                    <!-- When NOT signed in: show credential entry -->
-                    <StackPanel Visibility="{Binding IsSignedIn, Converter={StaticResource InverseBooleanToVisibilityConverter}, FallbackValue=Visible}">
-                        <TextBlock Text="Username or email" />
+                    <!-- Signed out: credentials -->
+                    <StackPanel Visibility="{Binding IsSignedIn, Converter={StaticResource InverseBooleanToVisibilityConverter}, FallbackValue=Visible}"
+                                MaxWidth="360" HorizontalAlignment="Left">
+                        <TextBlock Text="Email or username" />
                         <TextBox Text="{Binding UsernameEntry, UpdateSourceTrigger=PropertyChanged}" />
-                        <TextBlock Margin="0,4,0,0" Text="Password" />
+                        <TextBlock Margin="0,6,0,0" Text="Password" />
                         <PasswordBox x:Name="PasswordBoxControl" PasswordChanged="PasswordBoxControl_PasswordChanged" />
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Content="Sign in" Command="{Binding SignInCommand}" Margin="0,0,8,0" />
-                            <TextBlock VerticalAlignment="Center" Text="{Binding AuthStatus}" />
-                        </StackPanel>
-                        <TextBlock TextWrapping="Wrap" Margin="0,8,0,0" FontStyle="Italic" Foreground="Gray"
-                                   Text="The plugin authenticates with client_type=&quot;nina-plugin&quot;. Your refresh token is stored encrypted (Windows DPAPI, current-user scope); the access token lives in memory only and is refreshed automatically. Revoking the plugin from your account settings does not affect your web/desktop sessions." />
+                        <Button Content="Sign in to Focale" Command="{Binding SignInCommand}" IsDefault="True"
+                                HorizontalAlignment="Left" Padding="12,2" Margin="0,10,0,0" />
+                        <TextBlock Style="{StaticResource FocaleHint}" Text="No account yet? Create one on focale.space — it takes a minute." />
                     </StackPanel>
 
-                    <!-- When signed in: show identity + sign-out -->
+                    <!-- Signed in: identity, plan, sign-out -->
                     <StackPanel Visibility="{Binding IsSignedIn, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
                         <TextBlock>
                             <Run Text="Signed in as " />
                             <Run FontWeight="Bold" Text="{Binding SignedInAs, Mode=OneWay}" />
                         </TextBlock>
+                        <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" Text="{Binding PlanStatus}" />
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Content="Sign out" Command="{Binding SignOutCommand}" Margin="0,0,8,0" />
-                            <TextBlock VerticalAlignment="Center" Text="{Binding AuthStatus}" />
+                            <Button Content="Upgrade on focale.space" Command="{Binding OpenUpgradeCommand}" Margin="0,0,8,0" Padding="10,2"
+                                    Visibility="{Binding CanUpgrade, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}" />
+                            <Button Content="Check my plan again" Command="{Binding RefreshPlanCommand}" Margin="0,0,8,0" Padding="10,2" />
+                            <Button Content="Sign out" Command="{Binding SignOutCommand}" Padding="10,2" />
                         </StackPanel>
                     </StackPanel>
-                </StackPanel>
-            </GroupBox>
 
-            <!-- Storage: chosen once, at sign-in; nothing is uploaded before -->
-            <GroupBox Header="Where your frames go" Margin="0,0,0,8">
-                <StackPanel Margin="8">
+                    <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource NotificationWarningBrush}"
+                               Text="{Binding AuthStatus}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Storage: chosen once; nothing is uploaded before -->
+            <Border Style="{StaticResource FocaleSection}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource FocaleSectionTitle}" Text="Where your frames go" />
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,6"
-                               Text="Focale always reads the header and measures the frame. Choose what happens to its pixels — nothing is uploaded until you do." />
+                               Text="Focale always reads the header and measures the frame. Choose what happens to its pixels — nothing is uploaded until you do. This choice belongs to the active NINA profile." />
                     <RadioButton GroupName="FocaleStorageMode" IsChecked="{Binding IsIndexOnly, Mode=TwoWay}"
-                                 Content="Index only — keep the file on this computer; Focale keeps the metadata and measurements" />
+                                 Content="Index only — Focale reads each frame, then discards it. Nothing is kept but the metadata and measurements" />
                     <RadioButton GroupName="FocaleStorageMode" IsChecked="{Binding IsFocaleStorage, Mode=TwoWay}" Margin="0,4,0,0"
                                  Content="Focale storage — keep a copy in Focale (counts against your plan's storage)" />
                     <RadioButton GroupName="FocaleStorageMode" IsChecked="{Binding IsOwnStorage, Mode=TwoWay}" Margin="0,4,0,0"
@@ -71,50 +91,56 @@
                         <TextBlock VerticalAlignment="Center" Margin="8,0,0,0" TextWrapping="Wrap" Text="{Binding StoragesStatus}" />
                     </StackPanel>
                 </StackPanel>
-            </GroupBox>
+            </Border>
 
-            <!-- Features -->
-            <GroupBox Header="Features" Margin="0,0,0,8">
-                <StackPanel Margin="8">
+            <!-- NINA → Focale sync -->
+            <Border Style="{StaticResource FocaleSection}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource FocaleSectionTitle}" Text="NINA → Focale sync" />
                     <CheckBox IsChecked="{Binding EnableFitsUpload}"
-                              Content="Automatically upload every saved FITS / XISF frame" />
+                              Content="Send every FITS / XISF frame NINA saves" />
                     <CheckBox IsChecked="{Binding EnableNightEvents}" Margin="0,4,0,0"
-                              Content="Send what happens during the night (sequence, autofocus, meridian flips, guiding RMS, dithers, park, safety) to the night's Logbook" />
-                </StackPanel>
-            </GroupBox>
+                              Content="Send the night's log: sequence, autofocus, meridian flips, guiding RMS, dithers, park, safety" />
 
-            <!-- Queue -->
-            <GroupBox Header="Upload queue" Margin="0,0,0,8">
-                <StackPanel Margin="8">
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding UploadStatus}" />
-                        <Button Content="Resume uploads" Command="{Binding ResumeUploadsCommand}" Margin="8,0,0,0"
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="520" Text="{Binding UploadStatus}" />
+                        <Button Content="Resume" Command="{Binding ResumeUploadsCommand}" Margin="8,0,0,0" Padding="10,2"
                                 Visibility="{Binding IsUploadPaused, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}" />
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <TextBlock VerticalAlignment="Center"
+                                   Text="{Binding PendingCount, StringFormat='Waiting: {0}'}" Margin="0,0,12,0" />
+                        <TextBlock VerticalAlignment="Center"
+                                   Text="{Binding DeadCount, StringFormat='Refused: {0}'}" Margin="0,0,12,0"
+                                   ToolTip="Frames Focale will never accept (removed or changed on disk, or rejected by the server). See NINA's log for why." />
                         <Button Content="Refresh" Command="{Binding RefreshQueueCommand}" Margin="0,0,8,0" />
-                        <TextBlock VerticalAlignment="Center"
-                                   Text="{Binding PendingCount, StringFormat='Pending: {0}'}" Margin="0,0,12,0" />
-                        <TextBlock VerticalAlignment="Center"
-                                   Text="{Binding DeadCount, StringFormat='Dead: {0}'}" Margin="0,0,12,0" />
-                        <TextBlock VerticalAlignment="Center" Text="{Binding LastQueueRefreshLabel}" Foreground="Gray" />
+                        <TextBlock VerticalAlignment="Center" Text="{Binding LastQueueRefreshLabel}" Opacity="0.6" />
                     </StackPanel>
                 </StackPanel>
-            </GroupBox>
+            </Border>
 
             <!-- Privacy -->
-            <GroupBox Header="Privacy">
-                <StackPanel Margin="8">
+            <Border Style="{StaticResource FocaleSection}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource FocaleSectionTitle}" Text="Privacy" />
                     <TextBlock TextWrapping="Wrap"
-                        Text="• Refresh token stored encrypted (Windows DPAPI, current-user scope). Access token in memory only." />
-                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
-                        Text="• HTTPS only; server certificate validated against the OS trust store. TLS verification is never disabled." />
-                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
                         Text="• Only saved FITS / XISF files and, if enabled, the night's events (times, autofocus positions, guiding RMS…) are sent — no NINA profile, settings or log files. Nothing leaves your machine until you sign in and choose where frames go." />
                     <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
                         Text="• Frames wait in the local queue while you are offline, signed out, or over a plan limit, and go up once that clears." />
+                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
+                        Text="• Your password is never stored. The session token is kept encrypted for your Windows account (DPAPI) and can be revoked from Focale without signing you out elsewhere. HTTPS only, certificates always checked." />
                 </StackPanel>
-            </GroupBox>
+            </Border>
+
+            <!-- Advanced: the API URL, for a self-hosted Focale only -->
+            <Expander Header="Advanced" Margin="0,0,0,8">
+                <StackPanel Margin="12,6,0,0" MaxWidth="420" HorizontalAlignment="Left">
+                    <TextBlock Text="Focale API URL" />
+                    <TextBox Text="{Binding ServerUrl, UpdateSourceTrigger=LostFocus}" />
+                    <TextBlock Style="{StaticResource FocaleHint}"
+                               Text="Leave it at https://api.focale.space unless you run your own Focale server. Sign out and in again after changing it." />
+                </StackPanel>
+            </Expander>
 
         </StackPanel>
     </ScrollViewer>

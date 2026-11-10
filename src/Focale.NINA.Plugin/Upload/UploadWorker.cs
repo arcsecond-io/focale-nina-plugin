@@ -39,6 +39,8 @@ public enum UploadWorkerState {
     SignedOut,
     /// <summary>The user has not chosen where frames go yet (Focale storage, own storage, index only).</summary>
     AwaitingStorageChoice,
+    /// <summary>The user's Focale plan does not include NINA → Focale sync (Free): frames wait until they upgrade.</summary>
+    NeedsUpgrade,
     /// <summary>Focale refused uploads (plan limit, quota). Frames wait until <see cref="UploadWorker.Resume"/> or the pause expires.</summary>
     Paused,
     Running,
@@ -59,6 +61,10 @@ public sealed class UploadWorker : IDisposable {
     private static readonly TimeSpan NetworkRetryDelay = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan AuthRetryDelay    = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan RefusedPause      = TimeSpan.FromHours(1);
+    /// <summary>How often the plan is read again while it does not include the sync (the user may upgrade on the web).</summary>
+    private static readonly TimeSpan GatedPlanRecheck  = TimeSpan.FromMinutes(15);
+    /// <summary>How often the plan is read again while it could not be read at all.</summary>
+    private static readonly TimeSpan UnknownPlanRetry  = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// NightLog.Source value the backend stamps on rows created from this
@@ -82,6 +88,7 @@ public sealed class UploadWorker : IDisposable {
     private UploadWorkerState _state = UploadWorkerState.Running;
     private string? _pauseMessage;
     private DateTime _pausedUntilUtc = DateTime.MinValue;
+    private DateTime _nextPlanCheckUtc = DateTime.MinValue;
 
     /// <param name="onNightLogFiled">
     /// Told (night date, night log uuid) after each upload, so the night's events go to the log
@@ -125,7 +132,8 @@ public sealed class UploadWorker : IDisposable {
     /// <summary>Lifts a refusal pause (the user upgraded or freed space) and wakes the worker now.</summary>
     public void Resume() {
         lock (_stateLock) {
-            _pausedUntilUtc = DateTime.MinValue;
+            _pausedUntilUtc   = DateTime.MinValue;
+            _nextPlanCheckUtc = DateTime.MinValue;
         }
         Wake();
     }
@@ -167,6 +175,13 @@ public sealed class UploadWorker : IDisposable {
             if (UploadFields(_settings, relativePath: null) is null) {
                 SetState(UploadWorkerState.AwaitingStorageChoice,
                          "Choose where your frames go in the Focale settings. Nothing is uploaded until you do.");
+                await IdleAsync(IdlePoll, ct).ConfigureAwait(false);
+                continue;
+            }
+            await MaybeRefreshPlanAsync(ct).ConfigureAwait(false);
+            if (_api.Plan is { IncludesNinaSync: false } plan) {
+                SetState(UploadWorkerState.NeedsUpgrade,
+                         $"Your Focale {plan.Name} plan does not include NINA → Focale sync (Observer and above). Frames wait in the queue.");
                 await IdleAsync(IdlePoll, ct).ConfigureAwait(false);
                 continue;
             }
@@ -244,6 +259,17 @@ public sealed class UploadWorker : IDisposable {
                 await RequeueAsync(job, job.Attempt, TimeSpan.Zero, "no storage mode").ConfigureAwait(false);
                 return;
             }
+            // A frame Focale already has (an upload cut short after the server filed it, a frame
+            // re-saved under another name) is not sent again — unless only its index is there and
+            // this upload would keep the pixels.
+            var known = await FindKnownAsync(job.Sha256, ct).ConfigureAwait(false);
+            if (known is not null && (known.Stored || _settings.StorageMode == StorageMode.IndexOnly)) {
+                await _queue.MarkDoneAsync(job.Id, CancellationToken.None).ConfigureAwait(false);
+                Logger.Info($"Focale: {fi.Name} is already in Focale, not sent again");
+                await ReportNightLogAsync(new Api.Models.UploadResponse { Ingestion = known.Ingestion }).ConfigureAwait(false);
+                return;
+            }
+
             var response = await _api.UploadFileMultipartAsync(
                 FocaleEndpoints.DataFiles, fi, job.Sha256, ct, extraFields).ConfigureAwait(false);
             await _queue.MarkDoneAsync(job.Id, CancellationToken.None).ConfigureAwait(false);
@@ -262,6 +288,41 @@ public sealed class UploadWorker : IDisposable {
             Logger.Warning($"Focale: network unavailable, frame {job.Id} waits — {ex.Message}");
         } catch (Exception ex) {
             await RetryOrDieAsync(job, ex.Message).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Best effort: a failed lookup only means the frame is sent (the upload is idempotent anyway).</summary>
+    private async Task<Api.Models.KnownDataFile?> FindKnownAsync(string sha256, CancellationToken ct) {
+        try {
+            return await _api.FindKnownFileAsync(sha256, ct).ConfigureAwait(false);
+        } catch (OperationCanceledException) when (ct.IsCancellationRequested) {
+            throw;
+        } catch (Exception ex) {
+            Logger.Debug($"Focale: known-file lookup failed, sending the frame — {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads the user's plan when it is not known yet, or again from time to time while it gates the
+    /// sync (they may upgrade on focale.space). Never throws, even on shutdown: an unknown plan gates nothing.
+    /// </summary>
+    private async Task MaybeRefreshPlanAsync(CancellationToken ct) {
+        var plan = _api.Plan;
+        if (plan is { IncludesNinaSync: true }) return;
+        lock (_stateLock) {
+            if (DateTime.UtcNow < _nextPlanCheckUtc) return;
+        }
+        FocalePlan? read = null;
+        try {
+            read = await _api.RefreshPlanAsync(ct).ConfigureAwait(false);
+        } catch (OperationCanceledException) when (ct.IsCancellationRequested) {
+            return;   // shutting down: the loop exits at its next check
+        } catch (Exception ex) {
+            Logger.Debug($"Focale: could not read the plan — {ex.Message}");
+        }
+        lock (_stateLock) {
+            _nextPlanCheckUtc = DateTime.UtcNow + (read is null ? UnknownPlanRetry : GatedPlanRecheck);
         }
     }
 
@@ -333,6 +394,10 @@ public sealed class UploadWorker : IDisposable {
                     : apiEx.ServerMessage
                       ?? $"Focale refused the upload ({(int?)apiEx.StatusCode}). Check your plan and storage on focale.space.";
                 PauseForRefusal(message);
+                if (apiEx.ErrorCode == "subscription_required") {
+                    // The plan may have changed since it was read: read it again at the next turn.
+                    lock (_stateLock) _nextPlanCheckUtc = DateTime.MinValue;
+                }
                 Logger.Warning($"Focale: uploads paused until {DateTime.Now + RefusedPause:HH:mm} — {message}");
                 break;
 
@@ -401,7 +466,7 @@ public sealed class UploadWorker : IDisposable {
     public static async Task<string> ComputeSha256Async(FileInfo file, CancellationToken ct) {
         await using var s = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
         var hash = await SHA256.HashDataAsync(s, ct).ConfigureAwait(false);
-        return Convert.ToHexString(hash);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private async Task IdleAsync(TimeSpan d, CancellationToken ct) {

@@ -52,10 +52,11 @@ public sealed class TonightEntry {
 }
 
 /// <summary>
-/// "Focale Tonight": the night's plan from Focale's Tonight (targets, times, exposure lines), with
+/// "Focale → NINA plans": the night's plan from Focale's Tonight (targets, times, exposure lines), with
 /// "Add to sequence" per target and "Add all". Each target is built from the template the user picks
 /// (<see cref="NinaTargetBuilder"/>) and added to the Advanced Sequencer. Nothing changes in the
-/// sequence unless the user clicks. Reading the plan is not gated; writing it (in Focale) is Imager.
+/// sequence unless the user clicks. Reading the plan is not gated; writing its exposure plans (in Focale)
+/// needs Imager, so below Imager the panel says that the template's exposures are used.
 /// </summary>
 [Export(typeof(IDockableVM))]
 public sealed class FocaleTonightDockable : DockableVM {
@@ -68,14 +69,30 @@ public sealed class FocaleTonightDockable : DockableVM {
     [ImportingConstructor]
     public FocaleTonightDockable(IProfileService profileService, ISequenceMediator sequenceMediator) : base(profileService) {
         _sequenceMediator = sequenceMediator;
-        Title             = "Focale Tonight";
-        // A target reticle, as NINA's own panels use a single-path icon.
-        var icon = new GeometryGroup();
-        icon.Children.Add(Geometry.Parse("M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 1,1 4,12A8,8 0 0,1 12,4M12,7A5,5 0 1,0 17,12A5,5 0 0,0 12,7M12,9A3,3 0 1,1 9,12A3,3 0 0,1 12,9M11,0H13V5H11ZM11,19H13V24H11ZM0,11H5V13H0ZM19,11H24V13H19Z"));
-        icon.Freeze();
-        ImageGeometry  = icon;
+        Title             = "Focale → NINA plans";
+        ImageGeometry     = FocaleMarkGeometry;
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         AddAllCommand  = new RelayCommand(AddAll);
+    }
+
+    /// <summary>
+    /// The Focale mark as one filled shape, as NINA draws its panel icons in a single colour: the four
+    /// rays, the "F" hook and the star of focale-home's icon-logo-xs.svg (24×24).
+    /// </summary>
+    internal static readonly GeometryGroup FocaleMarkGeometry = CreateMarkGeometry();
+
+    private static GeometryGroup CreateMarkGeometry() {
+        var mark = new GeometryGroup { FillRule = FillRule.Nonzero };
+        foreach (var data in new[] {
+            "M11,2 L13,2 L12,9.5 Z", "M11,22 L13,22 L12,14.5 Z", "M2,11 L2,13 L9.5,12 Z", "M22,11 L22,13 L14.5,12 Z",
+            "M6.1,5.5 C6.9,10 6.9,14 6.1,18.5 L7.9,18.5 C8.7,14 8.7,10 7.9,5.5 Z",
+            "M6.6,4.7 C10.4,5.8 14,5.8 17,4.7 L17,6.5 C14,7.5 10.4,7.5 6.6,6.5 Z",
+            "M12.5,9.5 L13.3,11.7 L15.5,12.5 L13.3,13.3 L12.5,15.5 L11.7,13.3 L9.5,12.5 L11.7,11.7 Z",
+        }) {
+            mark.Children.Add(Geometry.Parse(data));
+        }
+        mark.Freeze();
+        return mark;
     }
 
     public ObservableCollection<TonightEntry> Entries { get; } = new();
@@ -100,7 +117,7 @@ public sealed class FocaleTonightDockable : DockableVM {
     private async Task RefreshAsync() {
         var api = FocaleRuntime.Api;
         if (api is null) { Status = "The Focale plugin is still starting."; return; }
-        if (!api.IsAuthenticated) { Status = "Sign in to Focale in Options → Plugins → Focale."; return; }
+        if (!api.IsAuthenticated) { Status = "Sign in to Focale in Options → Plugins → Focale."; Entries.Clear(); return; }
 
         LoadTemplates();
         var night = NightDate.Format(NightDate.Today());
@@ -121,7 +138,10 @@ public sealed class FocaleTonightDockable : DockableVM {
                 Entries.Add(new TonightEntry(planned, TimeLabel(entry.Start, entry.DurationSeconds), entry.Status,
                                              new RelayCommand(() => Add(planned))));
             }
-            Status = $"{plan.Entries.Count} target(s) planned. Choose a template, then add them to the sequence.";
+            Status = $"{plan.Entries.Count} target(s) planned. Choose a template, then add them to the sequence."
+                     + (api.Plan is { IncludesNinaPlans: false } p
+                         ? $" Exposure plans are written in Focale with the Imager plan; on {p.Name}, each target keeps the template's exposures."
+                         : "");
         } catch (FocaleApiException ex) {
             Status = $"Focale refused: {ex.ServerMessage ?? ex.Message}";
         } catch (Exception ex) {

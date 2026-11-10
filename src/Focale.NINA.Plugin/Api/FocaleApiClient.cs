@@ -61,6 +61,21 @@ public sealed class FocaleApiClient : IDisposable {
     private readonly TokenStore _tokens;
     private readonly HttpClient _http;
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private readonly object _planLock = new();
+    private FocalePlan? _plan;
+
+    /// <summary>The plugin's version, sent in the User-Agent.</summary>
+    public static readonly string Version =
+        typeof(FocaleApiClient).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+
+    /// <summary>
+    /// Raised when the account changes: signed in, signed out (by the user, or because the server
+    /// rejected the refresh token), or its plan was read. Raised on whatever thread made the change.
+    /// </summary>
+    public event EventHandler? AccountChanged;
+
+    /// <summary>The user's Focale plan, once read (<see cref="RefreshPlanAsync"/>); null before, or signed out.</summary>
+    public FocalePlan? Plan { get { lock (_planLock) return _plan; } }
 
     public FocaleApiClient(FocaleSettings settings) {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -76,7 +91,7 @@ public sealed class FocaleApiClient : IDisposable {
             // FITS uploads can be hundreds of MB on slow uplinks.
             Timeout = TimeSpan.FromMinutes(15),
         };
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("Focale.NINA.Plugin/0.1 (+https://focale.space)");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd($"Focale.NINA.Plugin/{Version} (+https://focale.space)");
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
     }
 
@@ -84,21 +99,41 @@ public sealed class FocaleApiClient : IDisposable {
 
     // ---- Auth ----
 
-    /// <summary>Exchanges username/password for an access+refresh pair. Persists the refresh token.</summary>
+    /// <summary>
+    /// Exchanges username/password for an access+refresh pair and persists the refresh token. A
+    /// refusal throws a <see cref="FocaleApiException"/> whose <see cref="FocaleApiException.ServerMessage"/>
+    /// says, in words for the user, what to do (<see cref="LoginRefusalMessage"/>).
+    /// </summary>
     public async Task<TokenPairResponse> LoginAsync(string username, string password, CancellationToken ct) {
         if (string.IsNullOrEmpty(username)) throw new ArgumentException("username required", nameof(username));
         if (string.IsNullOrEmpty(password)) throw new ArgumentException("password required", nameof(password));
 
         using var req = NewAuthRequest(FocaleEndpoints.Login, new LoginRequest { Username = username, Password = password });
         using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(resp).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode) {
+            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            var (errorCode, serverMessage) = ParseErrorBody(body);
+            throw new FocaleApiException($"Focale sign-in refused ({(int)resp.StatusCode})", resp.StatusCode,
+                retryable: false, errorCode: errorCode,
+                serverMessage: LoginRefusalMessage((int)resp.StatusCode, serverMessage));
+        }
         var pair = JsonConvert.DeserializeObject<TokenPairResponse>(
             await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false))
             ?? throw new FocaleApiException("Empty login response", resp.StatusCode, retryable: false);
 
         ApplyTokenPair(pair, fallbackUsername: username);
+        RaiseAccountChanged();
         return pair;
     }
+
+    /// <summary>What a refused sign-in means for the user (accounts.views.auth: CustomLoginView).</summary>
+    internal static string LoginRefusalMessage(int status, string? detail) => (status, detail) switch {
+        (403, "email_not_verified") => "Your email address is not verified yet. Open the link in the email Focale sent you (or sign in on focale.space to send it again), then sign in here.",
+        (400, _)                    => "Wrong email, username or password.",
+        (429, _)                    => "Too many sign-in attempts. Wait a few minutes, then try again.",
+        (>= 500, _)                 => "Focale is not answering right now. Try again in a moment.",
+        _                           => detail ?? $"Focale refused the sign-in ({status}).",
+    };
 
     /// <summary>
     /// Makes sure a fresh access token is in memory, refreshing it if needed. Returns false
@@ -127,10 +162,13 @@ public sealed class FocaleApiClient : IDisposable {
 
             using var req = NewAuthRequest(FocaleEndpoints.RefreshToken, new RefreshRequest { Refresh = refresh });
             using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
-            if (resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) {
-                // Refresh token expired or revoked — forget it so nothing keeps hammering 401s.
+            if (IsRefreshTokenRejected(resp.StatusCode)) {
+                // Refresh token expired or revoked — forget it so nothing keeps retrying, and let
+                // the UI ask the user to sign in again.
                 _tokens.Clear();
                 _settings.SetRefreshToken(null);
+                ClearPlan();
+                RaiseAccountChanged();
                 return false;
             }
             await EnsureSuccessAsync(resp).ConfigureAwait(false);
@@ -145,6 +183,13 @@ public sealed class FocaleApiClient : IDisposable {
             _refreshGate.Release();
         }
     }
+
+    /// <summary>
+    /// The refresh endpoint answers 400 "Invalid or expired refresh token." for an expired or revoked
+    /// token (accounts.views.auth.TokenRefreshView); 401/403 are kept for safety.
+    /// </summary>
+    internal static bool IsRefreshTokenRejected(HttpStatusCode status) =>
+        status is HttpStatusCode.BadRequest or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
 
     /// <summary>Clears stored credentials and tells the back-end to invalidate the session.</summary>
     public async Task LogoutAsync(CancellationToken ct) {
@@ -163,6 +208,8 @@ public sealed class FocaleApiClient : IDisposable {
         _tokens.Clear();
         _settings.SetRefreshToken(null);
         _settings.Username = null;
+        ClearPlan();
+        RaiseAccountChanged();
     }
 
     /// <summary>A JSON POST to an auth endpoint: carries its own credentials, so the auth handler leaves it alone.</summary>
@@ -191,6 +238,36 @@ public sealed class FocaleApiClient : IDisposable {
 
     public bool IsAuthenticated => _tokens.HasFreshAccess() || _settings.HasRefreshToken();
 
+    private void RaiseAccountChanged() {
+        try { AccountChanged?.Invoke(this, EventArgs.Empty); } catch { /* a handler must not break auth */ }
+    }
+
+    private void ClearPlan() { lock (_planLock) _plan = null; }
+
+    // ---- Plan ----
+
+    /// <summary>
+    /// Reads the user's Focale plan from their profile (<c>focale_tier</c>, <c>focale_storage</c>) and
+    /// keeps it in <see cref="Plan"/>. Returns null when signed out; throws on a network or server error,
+    /// leaving the last known plan in place. A tier the plugin does not know leaves <see cref="Plan"/>
+    /// null, so nothing is gated on a guess.
+    /// </summary>
+    public async Task<FocalePlan?> RefreshPlanAsync(CancellationToken ct) {
+        var username = _settings.Username;
+        if (string.IsNullOrEmpty(username) || !IsAuthenticated) { ClearPlan(); return null; }
+
+        using var resp = await _http.GetAsync(
+            BuildUri(string.Format(FocaleEndpoints.Profile, Uri.EscapeDataString(username))), ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(resp).ConfigureAwait(false);
+        var profile = JsonConvert.DeserializeObject<ProfileResponse>(
+            await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var tier = FocalePlan.ParseTier(profile?.FocaleTier);
+        var plan = tier is { } t ? new FocalePlan(t, profile?.FocaleStorage?.LimitBytes) : null;
+        lock (_planLock) _plan = plan;
+        RaiseAccountChanged();
+        return plan;
+    }
+
     // ---- App calls ----
 
     /// <summary>
@@ -204,8 +281,8 @@ public sealed class FocaleApiClient : IDisposable {
     /// Observation/Calibration creation + site/telescope/camera resolution).
     /// Sending a duplicate JSON would just be a second source of truth.
     ///
-    /// The sha256 doubles as the idempotency key — when the server sees a
-    /// repeat, it returns the existing DataFile and skips re-ingestion.
+    /// The sha256 (form field and <c>Idempotency-Key</c> header) is the idempotency key — when
+    /// the server sees a repeat, it returns the existing DataFile and skips re-ingestion.
     ///
     /// A 401 here is not retried by the auth handler (the file stream has been consumed);
     /// it surfaces as a <see cref="FocaleApiException"/> and the worker re-queues the frame.
@@ -234,7 +311,6 @@ public sealed class FocaleApiClient : IDisposable {
         };
         form.Add(streamContent, "file", file.Name);
         form.Add(new StringContent(sha256Hex), "sha256");
-        form.Add(new StringContent(sha256Hex), "idempotency_key");
         if (extraFields is not null) {
             foreach (var (k, v) in extraFields) {
                 form.Add(new StringContent(v), k);
@@ -252,6 +328,21 @@ public sealed class FocaleApiClient : IDisposable {
         } catch (JsonException) {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The file the user's Focale already holds with these bytes, or null (<c>GET /datafiles/?sha256=</c>).
+    /// Lets the worker skip sending a frame Focale has, e.g. one re-queued after an interrupted upload.
+    /// </summary>
+    public async Task<KnownDataFile?> FindKnownFileAsync(string sha256Hex, CancellationToken ct) {
+        using var resp = await _http.GetAsync(
+            BuildUri(FocaleEndpoints.DataFiles + "?sha256=" + Uri.EscapeDataString(sha256Hex.ToLowerInvariant())), ct)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(resp).ConfigureAwait(false);
+        var token = JToken.Parse(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var rows = token is JObject page && page["results"] is JArray results ? results : token as JArray;
+        return rows?.ToObject<List<KnownDataFile>>()?.FirstOrDefault(f =>
+            string.Equals(f.Sha256, sha256Hex, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>The user's storages that can receive uploads (writable, of a type the back-end writes to).</summary>

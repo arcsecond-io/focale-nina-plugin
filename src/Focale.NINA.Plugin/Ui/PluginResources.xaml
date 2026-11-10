@@ -5,6 +5,60 @@
                     xmlns:ui="clr-namespace:Focale.NINA.Plugin.Ui"
                     xmlns:plugin="clr-namespace:Focale.NINA.Plugin">
 
+    <!-- Focale's brand colours (focale-front icon-focale.svg): navy ground, lime rays, yellow star. -->
+    <Color x:Key="FocaleNavyColor">#011040</Color>
+    <Color x:Key="FocaleLimeColor">#AAFF00</Color>
+    <Color x:Key="FocaleYellowColor">#FFE800</Color>
+    <SolidColorBrush x:Key="FocaleNavyBrush"   Color="{StaticResource FocaleNavyColor}" />
+    <SolidColorBrush x:Key="FocaleLimeBrush"   Color="{StaticResource FocaleLimeColor}" />
+    <SolidColorBrush x:Key="FocaleYellowBrush" Color="{StaticResource FocaleYellowColor}" />
+
+    <!-- The Focale mark (focale-home icon-logo-xs.svg), 24×24. -->
+    <DrawingImage x:Key="FocaleLogo">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="{StaticResource FocaleNavyBrush}">
+                    <GeometryDrawing.Geometry>
+                        <RectangleGeometry Rect="0,0,24,24" RadiusX="4" RadiusY="4" />
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="M11,2 L13,2 L12,9.5 Z M11,22 L13,22 L12,14.5 Z M2,11 L2,13 L9.5,12 Z M22,11 L22,13 L14.5,12 Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="{StaticResource FocaleLimeColor}" Opacity="0.6" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="M7,5.5 C7.8,10 7.8,14 7,18.5 M7,5.5 C10.5,6.5 14,6.5 17,5.5">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="White" Thickness="1.8" StartLineCap="Round" EndLineCap="Round" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="{StaticResource FocaleYellowBrush}"
+                                 Geometry="M12.5,9.5 L13.3,11.7 L15.5,12.5 L13.3,13.3 L12.5,15.5 L11.7,13.3 L9.5,12.5 L11.7,11.7 Z" />
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- A small heading for each section of the settings page. -->
+    <Style x:Key="FocaleSectionTitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Margin" Value="0,0,0,6" />
+    </Style>
+
+    <!-- A section of the settings page: a thin lime rule on the left, like Focale's cards. -->
+    <Style x:Key="FocaleSection" TargetType="Border">
+        <Setter Property="BorderBrush" Value="{StaticResource FocaleLimeBrush}" />
+        <Setter Property="BorderThickness" Value="3,0,0,0" />
+        <Setter Property="Padding" Value="12,6,8,8" />
+        <Setter Property="Margin" Value="0,0,0,12" />
+    </Style>
+
+    <Style x:Key="FocaleHint" TargetType="TextBlock">
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Opacity" Value="0.7" />
+        <Setter Property="Margin" Value="0,4,0,0" />
+    </Style>
+
     <!-- Visibility converters used by FocaleOptionsView for the sign-in / sign-out swap. -->
     <wpf:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
     <ui:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />

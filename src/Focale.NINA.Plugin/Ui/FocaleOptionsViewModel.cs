@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -40,6 +41,10 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject, IDisposab
     [ObservableProperty] private string signedInAs             = "";
     [ObservableProperty] private string authStatus             = "";
 
+    // The user's Focale plan, read after sign-in.
+    [ObservableProperty] private string planStatus             = "";
+    [ObservableProperty] private bool   canUpgrade;
+
     [ObservableProperty] private string uploadStatus           = "";
     [ObservableProperty] private bool   isUploadPaused;
     [ObservableProperty] private int    pendingCount;
@@ -54,44 +59,85 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject, IDisposab
         _worker            = worker;
         _eventSender       = eventSender;
         ServerUrl          = _settings.ServerUrl;
-        EnableFitsUpload   = _settings.EnableFitsUpload;
-        EnableNightEvents  = _settings.EnableNightEvents;
-        if (_settings.DestinationStorageUuid is { } uuid) {
-            // Shown before the list is loaded, so the current choice is visible.
-            var current = new DataStorageResponse { Uuid = uuid, Name = _settings.DestinationStorageName };
-            Storages.Add(current);
-            SelectedStorage = current;
-        }
-        // Mirrors the saved mode; none checked while it is Unset.
-        IsFocaleStorage    = _settings.StorageMode == StorageMode.FocaleStorage;
-        IsOwnStorage       = _settings.StorageMode == StorageMode.OwnStorage;
-        IsIndexOnly        = _settings.StorageMode == StorageMode.IndexOnly;
-        IsSignedIn         = _settings.HasRefreshToken();
-        SignedInAs         = _settings.Username ?? "";
+        LoadProfileSettings();
+        UpdateAccount();
         UpdateUploadStatus();
         _worker.StateChanged += OnWorkerStateChanged;
+        _api.AccountChanged  += OnAccountChanged;
     }
 
-    partial void OnServerUrlChanged(string value)        => _settings.ServerUrl          = value?.Trim() ?? FocaleSettings.DefaultServerUrl;
+    /// <summary>The plugin's version, shown on the settings page.</summary>
+    public string VersionLabel => $"Version {FocaleApiClient.Version}";
+
+    /// <summary>Called when the user switches NINA profile: its storage choice and features apply now.</summary>
+    public void ReloadProfileSettings() => RunOnUi(LoadProfileSettings);
+
+    private bool _loading;
+
+    private void LoadProfileSettings() {
+        _loading = true;
+        try {
+            EnableFitsUpload  = _settings.EnableFitsUpload;
+            EnableNightEvents = _settings.EnableNightEvents;
+            Storages.Clear();
+            SelectedStorage = null;
+            if (_settings.DestinationStorageUuid is { } uuid) {
+                // Shown before the list is loaded, so the current choice is visible.
+                var current = new DataStorageResponse { Uuid = uuid, Name = _settings.DestinationStorageName };
+                Storages.Add(current);
+                SelectedStorage = current;
+            }
+            // Mirrors the saved mode; none checked while it is Unset.
+            IsFocaleStorage = _settings.StorageMode == StorageMode.FocaleStorage;
+            IsOwnStorage    = _settings.StorageMode == StorageMode.OwnStorage;
+            IsIndexOnly     = _settings.StorageMode == StorageMode.IndexOnly;
+        } finally {
+            _loading = false;
+        }
+        UpdateUploadStatus();
+    }
+
+    private void OnAccountChanged(object? sender, EventArgs e) => RunOnUi(UpdateAccount);
+
+    private void UpdateAccount() {
+        IsSignedIn = _settings.HasRefreshToken();
+        SignedInAs = _settings.Username ?? "";
+        var plan = _api.Plan;
+        PlanStatus = !IsSignedIn   ? ""
+                   : plan is null  ? "Reading your Focale plan…"
+                   : plan.Describe();
+        CanUpgrade = IsSignedIn && plan is { IncludesNinaPlans: false };
+    }
+
+    private static void RunOnUi(Action action) {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess()) action();
+        else dispatcher.BeginInvoke(action);
+    }
+
+    partial void OnServerUrlChanged(string value) => _settings.ServerUrl = value?.Trim() ?? FocaleSettings.DefaultServerUrl;
     partial void OnEnableFitsUploadChanged(bool value) {
+        if (_loading) return;
         _settings.EnableFitsUpload = value;
         _worker.Wake();
     }
 
     partial void OnEnableNightEventsChanged(bool value) {
+        if (_loading) return;
         _settings.EnableNightEvents = value;
         _eventSender.Wake();
     }
 
-    partial void OnIsFocaleStorageChanged(bool value) { if (value) SetStorageMode(StorageMode.FocaleStorage); }
-    partial void OnIsIndexOnlyChanged(bool value)     { if (value) SetStorageMode(StorageMode.IndexOnly); }
+    partial void OnIsFocaleStorageChanged(bool value) { if (value && !_loading) SetStorageMode(StorageMode.FocaleStorage); }
+    partial void OnIsIndexOnlyChanged(bool value)     { if (value && !_loading) SetStorageMode(StorageMode.IndexOnly); }
     partial void OnIsOwnStorageChanged(bool value) {
-        if (!value) return;
+        if (!value || _loading) return;
         SetStorageMode(StorageMode.OwnStorage);
         if (Storages.Count <= 1) _ = LoadStoragesAsync();
     }
 
     partial void OnSelectedStorageChanged(DataStorageResponse? value) {
+        if (_loading) return;
         _settings.DestinationStorageUuid = value?.Uuid;
         _settings.DestinationStorageName = value?.Name;
         _worker.Resume();   // a refused storage paused the queue: try the new one now
@@ -103,21 +149,20 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject, IDisposab
         UpdateUploadStatus();
     }
 
-    private void OnWorkerStateChanged(object? sender, EventArgs e) {
+    private void OnWorkerStateChanged(object? sender, EventArgs e) => RunOnUi(() => {
         UpdateUploadStatus();
-        // A refresh token rejected in the background signs the user out: reflect it.
-        IsSignedIn = _settings.HasRefreshToken();
         _ = RefreshQueueAsync();
-    }
+    });
 
     private void UpdateUploadStatus() {
-        IsUploadPaused = _worker.State == UploadWorkerState.Paused;
+        IsUploadPaused = _worker.State is UploadWorkerState.Paused or UploadWorkerState.NeedsUpgrade;
         UploadStatus = _worker.State switch {
             UploadWorkerState.Disabled  => "Automatic upload is off.",
             UploadWorkerState.SignedOut => _worker.PauseMessage ?? "Signed out — frames wait in the queue.",
             UploadWorkerState.AwaitingStorageChoice => _worker.PauseMessage ?? "Choose where your frames go — nothing is uploaded until you do.",
+            UploadWorkerState.NeedsUpgrade => _worker.PauseMessage ?? "Your Focale plan does not include NINA → Focale sync.",
             UploadWorkerState.Paused    => $"Paused: {_worker.PauseMessage} Retrying at {_worker.PausedUntilUtc?.ToLocalTime():HH:mm}.",
-            _                           => "Uploading.",
+            _                           => "Syncing: every saved frame goes to Focale.",
         };
     }
 
@@ -130,17 +175,22 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject, IDisposab
         AuthStatus = "Signing in…";
         try {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            var pair = await _api.LoginAsync(UsernameEntry.Trim(), PasswordEntry, cts.Token).ConfigureAwait(false);
+            await _api.LoginAsync(UsernameEntry.Trim(), PasswordEntry, cts.Token).ConfigureAwait(true);
             // Drop plaintext password from VM state immediately.
             PasswordEntry = "";
-            IsSignedIn    = _settings.HasRefreshToken();
-            SignedInAs    = _settings.Username ?? UsernameEntry.Trim();
-            AuthStatus    = $"Signed in as {SignedInAs}";
+            UpdateAccount();
+            AuthStatus    = "";
+            await RefreshPlanAsync().ConfigureAwait(true);
             // Frames queued while signed out go up now, not at the next poll.
-            _worker.Wake();
+            _worker.Resume();
+            _eventSender.Resume();
         } catch (FocaleApiException ex) {
             PasswordEntry = "";
-            AuthStatus    = $"Sign-in failed: {(int?)ex.StatusCode} {ex.Message}";
+            AuthStatus    = ex.ServerMessage ?? $"Sign-in failed ({(int?)ex.StatusCode}).";
+            Logger.Warning($"Focale: sign-in failed — {ex.Message}");
+        } catch (Exception ex) when (UploadWorker.IsNetworkFailure(ex)) {
+            PasswordEntry = "";
+            AuthStatus    = "Cannot reach Focale. Check the internet connection, then try again.";
             Logger.Warning($"Focale: sign-in failed — {ex.Message}");
         } catch (Exception ex) {
             PasswordEntry = "";
@@ -149,22 +199,47 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject, IDisposab
         }
     }
 
+    /// <summary>Reads the plan again — after an upgrade on focale.space, say.</summary>
+    [RelayCommand]
+    private async Task RefreshPlanAsync() {
+        if (!_api.IsAuthenticated) return;
+        try {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await _api.RefreshPlanAsync(cts.Token).ConfigureAwait(true);
+            if (_api.Plan is null) PlanStatus = "Could not tell which Focale plan you are on.";
+        } catch (Exception ex) {
+            PlanStatus = "Could not read your Focale plan. It is read again before the next upload.";
+            Logger.Warning($"Focale: reading the plan failed — {ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private void OpenUpgrade() => OpenUrl(FocalePlan.UpgradeUrl);
+
+    [RelayCommand]
+    private void OpenFocale() => OpenUrl("https://focale.space");
+
+    private static void OpenUrl(string url) {
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception ex) { Logger.Warning($"Focale: could not open {url} — {ex.Message}"); }
+    }
+
     [RelayCommand]
     private async Task SignOutAsync() {
         try {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             await _api.LogoutAsync(cts.Token).ConfigureAwait(false);
         } finally {
-            IsSignedIn = false;
-            SignedInAs = "";
-            AuthStatus = "Signed out.";
+            UpdateAccount();
+            AuthStatus = "";
             _worker.Wake();
         }
     }
 
-    /// <summary>Lifts a plan/quota pause right away — e.g. after upgrading on focale.space.</summary>
+    /// <summary>Lifts a plan/quota pause right away — e.g. after upgrading on focale.space — reading the plan again first.</summary>
     [RelayCommand]
-    private void ResumeUploads() {
+    private async Task ResumeUploadsAsync() {
+        await RefreshPlanAsync().ConfigureAwait(true);
         _worker.Resume();
         _eventSender.Resume();
     }
@@ -205,5 +280,8 @@ public sealed partial class FocaleOptionsViewModel : ObservableObject, IDisposab
         }
     }
 
-    public void Dispose() => _worker.StateChanged -= OnWorkerStateChanged;
+    public void Dispose() {
+        _worker.StateChanged -= OnWorkerStateChanged;
+        _api.AccountChanged  -= OnAccountChanged;
+    }
 }

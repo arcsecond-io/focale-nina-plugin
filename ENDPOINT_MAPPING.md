@@ -1,4 +1,4 @@
-# Endpoint mapping — NINA plugin → arcsecond-back
+# Endpoint mapping — NINA plugin → Focale API (arcsecond-back)
 
 How the plugin maps NINA concepts onto **existing** arcsecond-back resources, using **typed FKs** (not free-form JSON) wherever the schema already supports it. URL prefix: arcsecond-back mounts every app at the URL root, so all paths below are absolute under the configured Server URL (default `https://api.focale.space`).
 
@@ -10,13 +10,24 @@ A "night" runs from **local noon (date D) to local noon (date D+1)** and is date
 
 | Concept | Plugin | Endpoint |
 |---|---|---|
-| Sign in | username + password | `POST /auth/token/` |
+| Sign in | email or username + password | `POST /auth/token/` |
 | Refresh | stored refresh token | `POST /auth/token/refresh/` |
 | Sign out | clears local + server | `POST /auth/logout/` |
+| Plan | the user's Focale tier | `GET /profiles/<username>/` |
+
+Sign-in refusals are put in words: `400` wrong credentials, `403 {"detail": "email_not_verified"}` (verify the email first), `429` too many attempts. The refresh endpoint answers **`400`** `"Invalid or expired refresh token."` for an expired (14 days) or revoked token: the plugin then forgets it and asks the user to sign in again (401/403 are treated the same, for safety).
+
+The account (server URL, username, DPAPI-protected refresh token) is kept in `%LOCALAPPDATA%\NINA\PluginData\Focale\account.json`, shared by every NINA profile; the storage choice and features stay in each profile's plugin settings. An account kept in a profile by an earlier build is moved there on first start.
+
+### Plan
+
+`GET /profiles/<username>/` (the owner's private profile) gives `focale_tier` (`free`, `observer`, `imager`, `pro`; `pro` on a self-hosted Focale) and `focale_storage` (`limit_bytes`, …). It is read after sign-in, at start, on **Check my plan again** / **Resume**, and every 15 minutes while it does not include the sync. On Free, frames and events wait instead of being sent and refused; an unknown tier gates nothing.
 
 Every request carries `X-Focale-Client: nina-plugin` and an `Authorization: Bearer <access>` header. Backend recognises the client type via the `NINA_PLUGIN_JWT_CLIENT_TYPE` constant in `accounts/jwt_tokens.py` (applied).
 
-## FITS upload — single-shot auto-ingest
+## NINA → Focale sync ("NINA import" in the pricing table)
+
+### FITS upload — single-shot auto-ingest
 
 For each saved FITS frame the plugin does **one server-side write**:
 
@@ -25,8 +36,7 @@ POST /datafiles/
   Content-Type: multipart/form-data
   Idempotency-Key: <sha256>
   ─ file:         <FITS bytes, application/fits>
-  ─ sha256:       <hex>
-  ─ idempotency_key: <hex>          (same as sha256, server accepts either)
+  ─ sha256:       <hex, lowercase>
   ─ auto_ingest:  true
   ─ persist_file: true | false       (false in "index only" mode)
   ─ destination:  <storage uuid>     ("my own storage" mode only)
@@ -65,6 +75,8 @@ Before each upload the plugin refreshes its access token if it is missing or abo
 
 ### Idempotency
 
+Before sending a frame, the plugin asks `GET /datafiles/?sha256=<hex>`: a frame Focale already has (an upload cut short after the server filed it) is not sent again, unless only its index is there (`stored: false`) and this upload would keep the pixels. The answer's `ingestion.night_log` is used as an upload's would be. A failed lookup only means the frame is sent.
+
 The same sha256 from the same owner short-circuits server-side: the existing `DataFile` is returned, no second `Observation` is created, no `NightLog` roll-over noise. Retries on flaky networks are safe by construction.
 
 ### Source attribution
@@ -87,7 +99,7 @@ The upload response's `ingestion.night_log` (`{uuid, date}`) is remembered per n
 
 On the Focale deploy the upload passes the plan gates of `entitlements/focale.py` before anything is filed: NINA import (`source=observer_console`) needs the Observer plan or above, the indexed FITS/XISF files are capped (Free 100, Observer 1,000), and so is Focale storage when the file is kept there (10 / 50 / 250 GB / 1.5 TB). Each refusal is a `403 {"error": "subscription_required", "gate": …, "message": …}`; the plugin pauses and shows the message. A re-upload of a frame Focale already has (same sha256) is never refused.
 
-## Night events
+### Night events
 
 The plugin records what happens during the night from NINA's mediators and files it under the night log its frames went into:
 
@@ -110,7 +122,7 @@ POST /nightlogs/<night_log_uuid>/events/
 
 Events are kept in `%LOCALAPPDATA%\NINA\PluginData\Focale\events.db` and sent in batches of up to 200, idempotently (`client_id` is unique per night log, so a retried batch files nothing twice). An event belongs to the night (local noon to noon) its start falls in, and waits until an upload has reported that night's log; events of nights with no uploaded frame are dropped after 7 days. Writing events is the same `nina_import` plan gate; reading them (the Logbook timeline) is not gated. `image_save_failed` exists on the back-end but is not sent: NINA's `ImageSaveFailed` is 3.3-only.
 
-## NINA push (Focale Tonight panel)
+## Focale → NINA plans (the "Focale → NINA plans" panel; "NINA push" in the pricing table)
 
 ```
 GET /nightplans/?date=2026-10-28           → the user's night plan of that night (Focale's Tonight; the first)
@@ -121,7 +133,7 @@ GET /nightplans/<uuid>/exposures/          → its entries, in order:
       "lines": [{"filter": "Ha", "exposure_seconds": 300, "count": 20, "binning": 1}]}]}
 ```
 
-The lines are written in Focale's Tonight (PUT `/nightplans/<uuid>/exposures/<target_id>/`, Imager plan and up) and kept on the back-end as an observing sequence N.I.N.A. runs (`executor = nina`), which Focale's own engine never starts.
+The lines are written in Focale's Tonight (PUT `/nightplans/<uuid>/exposures/<target_id>/`, gate `nina_push`: Imager plan and up) and kept as `ExposureLine` rows of the entry's observation (`observingruns/models/exposure_lines.py`). Reading them is not gated; below Imager the panel says each target keeps the template's exposures.
 
 Per entry the plugin plans (`Push/TargetPlanner`): filters are matched by name in the active profile's filter wheel (case and punctuation aside, never guessed; unmatched lines are left out and shown); a target without fixed coordinates (a planet, a comet) cannot be added; an entry without lines keeps the template's exposures. Then it builds (`Push/NinaTargetBuilder`): the chosen template is cloned, its target set (name, J2000 coordinates, position angle), its Smart Exposures replaced by clones of the first one, one per line (filter, exposure time, binning, loop count), and `ISequenceMediator.AddAdvancedTarget` adds it. Gain and offset stay the template's.
 

@@ -62,15 +62,17 @@ public sealed class FocalePlugin : PluginBase {
     public override Task Initialize() {
         try {
             var pluginId = Guid.Parse(Identifier);
-            _settings = new FocaleSettings(pluginId, _profileService.ActiveProfile.PluginSettings);
-            _api      = new FocaleApiClient(_settings);
-            FocaleRuntime.Settings = _settings;
-            FocaleRuntime.Api      = _api;
-
             var dataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "NINA", "PluginData", "Focale");
             Directory.CreateDirectory(dataDir);
+
+            // The account is shared by every NINA profile; the rest follows the active profile.
+            var account = new AccountStore(Path.Combine(dataDir, "account.json"));
+            _settings = new FocaleSettings(pluginId, () => _profileService.ActiveProfile.PluginSettings, account);
+            _api      = new FocaleApiClient(_settings);
+            FocaleRuntime.Settings = _settings;
+            FocaleRuntime.Api      = _api;
             _queue = new UploadQueue(Path.Combine(dataDir, "queue.db"));
             _ = _queue.InitializeAsync();   // fire-and-forget; the worker tolerates startup races
 
@@ -97,6 +99,15 @@ public sealed class FocalePlugin : PluginBase {
             _imageSaveMediator.ImageSaved += OnImageSaved;
 
             _optionsVm = new FocaleOptionsViewModel(_settings, _api, _queue, _worker, _eventSender);
+            _profileService.ProfileChanged += OnProfileChanged;
+
+            // Read the plan now, so the settings page and the panels show it before the first frame.
+            if (_api.IsAuthenticated) {
+                _ = Task.Run(async () => {
+                    try { await _api.RefreshPlanAsync(CancellationToken.None).ConfigureAwait(false); }
+                    catch (Exception ex) { Logger.Warning($"Focale: could not read the plan — {ex.Message}"); }
+                });
+            }
 
             Logger.Info($"Focale plugin initialized. Tonight is {NightDate.Format(NightDate.Today())}.");
             return Task.CompletedTask;
@@ -108,6 +119,7 @@ public sealed class FocalePlugin : PluginBase {
 
     public override async Task Teardown() {
         try { _imageSaveMediator.ImageSaved -= OnImageSaved; } catch { }
+        try { _profileService.ProfileChanged -= OnProfileChanged; } catch { }
         try { _eventSource?.Dispose(); } catch (Exception ex) { Logger.Error("Focale: event source teardown failed", ex); }
         if (_eventSender is not null) {
             try { await _eventSender.StopAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
@@ -125,6 +137,17 @@ public sealed class FocalePlugin : PluginBase {
         _api?.Dispose();
         _queue?.Dispose();
         Logger.Info("Focale plugin torn down");
+    }
+
+    /// <summary>The storage choice and features belong to the profile: show and use the new one's.</summary>
+    private void OnProfileChanged(object? sender, EventArgs e) {
+        try {
+            _optionsVm?.ReloadProfileSettings();
+            _worker?.Resume();
+            _eventSender?.Wake();
+        } catch (Exception ex) {
+            Logger.Error("Focale: profile change handling failed", ex);
+        }
     }
 
     private async void OnImageSaved(object? sender, ImageSavedEventArgs e) {

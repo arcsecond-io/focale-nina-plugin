@@ -73,7 +73,8 @@ public sealed class NightEventSender : IDisposable {
     private async Task RunAsync(CancellationToken ct) {
         while (!ct.IsCancellationRequested) {
             try {
-                if (_settings.EnableNightEvents && _api.IsAuthenticated && DateTime.UtcNow >= _pausedUntilUtc) {
+                if (_settings.EnableNightEvents && _api.IsAuthenticated && _api.Plan is not { IncludesNinaSync: false }
+                    && DateTime.UtcNow >= _pausedUntilUtc) {
                     await SendPendingAsync(ct).ConfigureAwait(false);
                 }
                 if (DateTime.UtcNow - _lastPurgeUtc > TimeSpan.FromHours(6)) {
