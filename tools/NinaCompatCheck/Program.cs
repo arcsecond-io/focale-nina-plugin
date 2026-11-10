@@ -21,8 +21,19 @@ dirs.Add(runtimeDir);
 // …/shared/Microsoft.NETCore.App/<v>/ → …/shared/Microsoft.WindowsDesktop.App/<v>/ (Windows only).
 var desktop = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(runtimeDir.TrimEnd(Path.DirectorySeparatorChar)))!,
                            "Microsoft.WindowsDesktop.App");
-if (Directory.Exists(desktop)) dirs.AddRange(Directory.GetDirectories(desktop));
-var paths = dirs.Where(Directory.Exists).SelectMany(d => Directory.GetFiles(d, "*.dll")).ToList();
+// Several Windows Desktop runtimes can be installed side by side (a CI runner has 8, 9 and 10): use the
+// one of this process's runtime version, or else the newest — never several, which would offer the
+// resolver two PresentationCore of the same identity.
+if (Directory.Exists(desktop)) {
+  var version = Path.GetFileName(runtimeDir.TrimEnd(Path.DirectorySeparatorChar));
+  var match = Path.Combine(desktop, version);
+  var chosen = Directory.Exists(match) ? match
+    : Directory.GetDirectories(desktop).OrderByDescending(d => Version.TryParse(Path.GetFileName(d).Split('-')[0], out var v) ? v : new Version(0, 0)).FirstOrDefault();
+  if (chosen != null) dirs.Add(chosen);
+}
+// One file per assembly name, the first directory winning: the target NINA's own copies come before the runtime's.
+var paths = dirs.Where(Directory.Exists).SelectMany(d => Directory.GetFiles(d, "*.dll"))
+  .GroupBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
 using var mlc = new MetadataLoadContext(new PathAssemblyResolver(paths), "System.Runtime");
 using var fs = File.OpenRead(plugin); using var pe = new PEReader(fs); var md = pe.GetMetadataReader();
 var prov = new NameProvider(md);
