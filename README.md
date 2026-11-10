@@ -7,7 +7,7 @@ A NINA plugin that connects N.I.N.A. to [Focale](https://focale.space), both way
 | | Direction | What | Plan |
 |---|---|---|---|
 | **NINA → Focale sync** | up, to the cloud | Every frame NINA saves, the night's sessions and logs fill your Focale memory as you capture. | Observer and above |
-| **Focale → NINA plans** | down, to the rig | Tonight's targets and exposure plans from Focale, added to NINA's Advanced Sequencer. | Imager and above |
+| **Focale → NINA plans** | down, to the rig — and back | Tonight's targets and exposure plans from Focale, added to NINA's Advanced Sequencer; each target tells Focale when it starts and finishes. | Imager and above |
 
 (Focale's pricing table called them "NINA import" and "NINA push".)
 
@@ -24,6 +24,7 @@ A NINA plugin that connects N.I.N.A. to [Focale](https://focale.space), both way
 ## Focale → NINA plans
 
 - **Focale → NINA plans panel** — a dock panel in NINA lists tonight's plan from Focale's Tonight: each target with its time and exposure lines (filter × exposure × count, binning). Pick one of your own NINA target templates once; "Add" builds a target from it — the template is cloned, its target set (name, J2000 coordinates, position angle), and its Smart Exposures replaced by one per planned line (filters matched by name in your filter wheel, never guessed) — and adds it to the Advanced Sequencer. "Add all" does the whole night. Nothing changes in your sequence unless you click. Gain and offset come from the template. Anyone can read their plan in the panel; writing exposure plans in Focale's Tonight needs Imager, so on Observer each target keeps the template's exposures.
+- **What ran goes back to Focale** — each target the panel builds starts with a *Focale: mark active* step and ends with *Focale: mark done*, so Focale's Tonight shows the entry as active while NINA images it and done once its target container finishes (the panel shows the status on refresh, and "Add all" skips entries already done or skipped). The steps never fail or slow down the sequence: the status is sent in the background, and while you are offline or signed out the latest one per entry waits and goes later (until NINA closes). A target stopped or skipped in NINA before its end stays active. The steps keep their entry when you save the sequence; picked by hand from the sequencer's Focale category, they are not linked to an entry and do nothing.
 
 The plugin does not send NINA profiles, settings or log files. Smart scheduling is the next phase.
 

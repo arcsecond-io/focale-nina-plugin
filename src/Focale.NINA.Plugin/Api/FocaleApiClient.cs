@@ -375,6 +375,21 @@ public sealed class FocaleApiClient : IDisposable {
         return JsonConvert.DeserializeObject<ExposurePlanResponse>(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
     }
 
+    /// <summary>
+    /// Sets the status of one entry of a night plan (<c>active</c>, <c>done</c> or <c>skipped</c>), as NINA
+    /// starts and finishes its target. Idempotent: the server just stores the status.
+    /// </summary>
+    public async Task SetPlanEntryStatusAsync(string planUuid, string entryUuid, string status, CancellationToken ct) {
+        if (string.IsNullOrEmpty(planUuid)) throw new ArgumentException("plan uuid required", nameof(planUuid));
+        if (string.IsNullOrEmpty(entryUuid)) throw new ArgumentException("entry uuid required", nameof(entryUuid));
+        var path = string.Format(FocaleEndpoints.NightPlanEntry, Uri.EscapeDataString(planUuid), Uri.EscapeDataString(entryUuid));
+        using var req = new HttpRequestMessage(HttpMethod.Patch, BuildUri(path)) {
+            Content = new StringContent(JsonConvert.SerializeObject(new { status }), System.Text.Encoding.UTF8, "application/json"),
+        };
+        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(resp).ConfigureAwait(false);
+    }
+
     /// <summary>Files a batch of events under a night log. Idempotent: the server keys them on their client ids.</summary>
     public async Task PostNightEventsAsync(string nightLogUuid, IReadOnlyList<NightEventPayload> events, CancellationToken ct) {
         var path = string.Format(FocaleEndpoints.NightLogEvents, nightLogUuid);

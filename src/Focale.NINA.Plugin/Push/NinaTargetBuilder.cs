@@ -17,6 +17,9 @@ namespace Focale.NINA.Plugin.Push;
 /// its own settings (dithering, error behaviour) carry over. With no line planned, the template's
 /// exposures are kept as they are.
 ///
+/// When the plan is known (<see cref="PlannedTarget.PlanUuid"/>), the target starts with "Focale: mark
+/// active" and ends with "Focale: mark done" (<see cref="PlanStatusItem"/>), so Focale learns what ran.
+///
 /// Only members present in NINA 3.2 and 3.3 are used (see tools/NinaCompatCheck). In 3.3 the exposure
 /// time, gain, offset and iterations are expressions; their scalar setters, used here, set them.
 /// </summary>
@@ -39,7 +42,25 @@ public static class NinaTargetBuilder {
             Angle.ByDegree(plan.RaDegrees!.Value), Angle.ByDegree(plan.DecDegrees!.Value), Epoch.J2000);
         if (plan.PositionAngle is { } pa) target.PositionAngle = pa;
 
-        if (plan.KeepsTemplateExposures) return container;
+        if (!plan.KeepsTemplateExposures) PlanExposures(container, plan, wheelFilters);
+        AddStatusSteps(container, plan);
+        return container;
+    }
+
+    /// <summary>
+    /// Puts "mark active" first and "mark done" last in the target, for its entry. Steps a template saved
+    /// from an earlier target carry another entry: they are removed first.
+    /// </summary>
+    internal static void AddStatusSteps(SequenceContainer container, PlannedTarget plan) {
+        foreach (var stale in Descendants(container).OfType<PlanStatusItem>().ToList()) {
+            (stale.Parent as SequenceContainer)?.Remove(stale);
+        }
+        if (string.IsNullOrEmpty(plan.PlanUuid) || string.IsNullOrEmpty(plan.EntryUuid)) return;
+        container.InsertIntoSequenceBlocks(0, new MarkPlanEntryActive { PlanUuid = plan.PlanUuid, EntryUuid = plan.EntryUuid });
+        container.Add(new MarkPlanEntryDone { PlanUuid = plan.PlanUuid, EntryUuid = plan.EntryUuid });
+    }
+
+    private static void PlanExposures(SequenceContainer container, PlannedTarget plan, IReadOnlyList<FilterInfo> wheelFilters) {
 
         var smartExposures = Descendants(container).OfType<SmartExposure>().ToList();
         if (smartExposures.Count == 0) {
@@ -66,7 +87,6 @@ public static class NinaTargetBuilder {
             item.Name = $"{exposure.Filter} {exposure.Count}×{exposure.ExposureSeconds:0.##}s";
             parent.InsertIntoSequenceBlocks(Math.Min(index + offset, parent.Items.Count), item);
         }
-        return container;
     }
 
     private static IEnumerable<ISequenceItem> Descendants(ISequenceContainer container) {

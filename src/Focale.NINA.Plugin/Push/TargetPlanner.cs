@@ -22,6 +22,12 @@ public sealed record PlannedTarget(
     IReadOnlyList<string> UnknownFilters,
     string? Blocker) {
 
+    /// <summary>
+    /// The night plan the entry belongs to. With it, the built target tells Focale when it starts and
+    /// finishes (<see cref="PlanStatusItem"/>); without it, the target runs without reporting.
+    /// </summary>
+    public string? PlanUuid { get; init; }
+
     /// <summary>The entry can be added to the sequence (it may still have warnings).</summary>
     public bool CanAdd => Blocker is null;
 

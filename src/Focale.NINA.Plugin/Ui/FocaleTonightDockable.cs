@@ -55,7 +55,8 @@ public sealed class TonightEntry {
 /// "Focale → NINA plans": the night's plan from Focale's Tonight (targets, times, exposure lines), with
 /// "Add to sequence" per target and "Add all". Each target is built from the template the user picks
 /// (<see cref="NinaTargetBuilder"/>) and added to the Advanced Sequencer. Nothing changes in the
-/// sequence unless the user clicks. Reading the plan is not gated; writing its exposure plans (in Focale)
+/// sequence unless the user clicks. Each added target sets its entry's status in Focale as it runs
+/// ("active", then "done"), which the panel shows on refresh. Reading the plan is not gated; writing its exposure plans (in Focale)
 /// needs Imager, so below Imager the panel says that the template's exposures are used.
 /// </summary>
 [Export(typeof(IDockableVM))]
@@ -134,7 +135,7 @@ public sealed class FocaleTonightDockable : DockableVM {
             }
             var filters = WheelFilterNames();
             foreach (var entry in plan.Entries) {
-                var planned = TargetPlanner.Plan(entry, filters);
+                var planned = TargetPlanner.Plan(entry, filters) with { PlanUuid = plan.NightPlan };
                 Entries.Add(new TonightEntry(planned, TimeLabel(entry.Start, entry.DurationSeconds), entry.Status,
                                              new RelayCommand(() => Add(planned))));
             }

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Focale → NINA plans goes both ways: each target the panel builds starts with a **Focale: mark active**
+  step and ends with **Focale: mark done** (Advanced Sequencer category "Focale"), which set the entry's
+  status in Focale (`PATCH /nightplans/<plan>/observations/<entry>/`). Best-effort and never blocking the
+  sequence: statuses are sent in the background, the latest per entry kept and retried while offline or
+  signed out, dropped when refused.
 - The two features have names that say which way they go: **NINA → Focale sync** (was "NINA import":
   frames, sessions and night logs) and **Focale → NINA plans** (was "NINA push"; the dock panel, formerly
   "Focale Tonight", is now titled so).

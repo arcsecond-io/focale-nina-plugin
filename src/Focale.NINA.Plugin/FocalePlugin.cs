@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Focale.NINA.Plugin.Api;
+using Focale.NINA.Plugin.Push;
 using Focale.NINA.Plugin.Common;
 using Focale.NINA.Plugin.Events;
 using Focale.NINA.Plugin.Settings;
@@ -37,6 +38,7 @@ public sealed class FocalePlugin : PluginBase {
     private NightEventSender? _eventSender;
     private NinaEventSource? _eventSource;
     private FocaleOptionsViewModel? _optionsVm;
+    private PlanStatusReporter? _planStatus;
 
     [ImportingConstructor]
     public FocalePlugin(
@@ -73,6 +75,10 @@ public sealed class FocalePlugin : PluginBase {
             _api      = new FocaleApiClient(_settings);
             FocaleRuntime.Settings = _settings;
             FocaleRuntime.Api      = _api;
+            // "Focale → NINA plans", the way back: the sequence's Focale steps set each entry's status.
+            _planStatus = new PlanStatusReporter(_api);
+            FocaleRuntime.PlanStatus = _planStatus;
+            _planStatus.Start();
             _queue = new UploadQueue(Path.Combine(dataDir, "queue.db"));
             _ = _queue.InitializeAsync();   // fire-and-forget; the worker tolerates startup races
 
@@ -126,6 +132,12 @@ public sealed class FocalePlugin : PluginBase {
             catch (Exception ex) { Logger.Error("Focale: event sender stop failed", ex); }
         }
 
+        if (_planStatus is not null) {
+            FocaleRuntime.PlanStatus = null;
+            try { await _planStatus.StopAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
+            catch (Exception ex) { Logger.Error("Focale: plan status reporter stop failed", ex); }
+        }
+
         if (_worker is not null) {
             try { await _worker.StopAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false); }
             catch (Exception ex) { Logger.Error("Focale: worker.StopAsync failed", ex); }
@@ -133,6 +145,7 @@ public sealed class FocalePlugin : PluginBase {
         _optionsVm?.Dispose();
         _worker?.Dispose();
         _eventSender?.Dispose();
+        _planStatus?.Dispose();
         _eventStore?.Dispose();
         _api?.Dispose();
         _queue?.Dispose();

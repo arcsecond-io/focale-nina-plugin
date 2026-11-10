@@ -3,7 +3,10 @@
                     xmlns:sys="clr-namespace:System.Windows;assembly=PresentationFramework"
                     xmlns:wpf="clr-namespace:System.Windows.Controls;assembly=PresentationFramework"
                     xmlns:ui="clr-namespace:Focale.NINA.Plugin.Ui"
-                    xmlns:plugin="clr-namespace:Focale.NINA.Plugin">
+                    xmlns:plugin="clr-namespace:Focale.NINA.Plugin"
+                    xmlns:push="clr-namespace:Focale.NINA.Plugin.Push"
+                    xmlns:nina="clr-namespace:NINA.View.Sequencer;assembly=NINA.Sequencer"
+                    xmlns:mini="clr-namespace:NINA.View.Sequencer.MiniSequencer;assembly=NINA.Sequencer">
 
     <!-- Focale's brand colours (focale-front icon-focale.svg): navy ground, lime rays, yellow star. -->
     <Color x:Key="FocaleNavyColor">#011040</Color>
@@ -79,6 +82,43 @@
     -->
     <DataTemplate x:Key="Focale.NINA.Plugin.Ui.FocaleTonightDockable_Dockable">
         <ui:FocaleTonightView />
+    </DataTemplate>
+
+    <!--
+        The Advanced Sequencer's Focale steps ("Focale: mark active" / "Focale: mark done"). Their icon is
+        looked up by the [ExportMetadata("Icon")] key; their views by DataType, and in the mini sequencer
+        as "<full type name>_Mini" (NINA plugin template).
+    -->
+    <GeometryGroup x:Key="Focale_MarkSVG" FillRule="Nonzero">
+        <PathGeometry Figures="M11,2 L13,2 L12,9.5 Z M11,22 L13,22 L12,14.5 Z M2,11 L2,13 L9.5,12 Z M22,11 L22,13 L14.5,12 Z" />
+        <PathGeometry Figures="M6.1,5.5 C6.9,10 6.9,14 6.1,18.5 L7.9,18.5 C8.7,14 8.7,10 7.9,5.5 Z" />
+        <PathGeometry Figures="M6.6,4.7 C10.4,5.8 14,5.8 17,4.7 L17,6.5 C14,7.5 10.4,7.5 6.6,6.5 Z" />
+        <PathGeometry Figures="M12.5,9.5 L13.3,11.7 L15.5,12.5 L13.3,13.3 L12.5,15.5 L11.7,13.3 L9.5,12.5 L11.7,11.7 Z" />
+    </GeometryGroup>
+
+    <DataTemplate x:Key="FocalePlanStatusContent">
+        <TextBlock VerticalAlignment="Center" Text="{Binding Explanation}" TextWrapping="Wrap" Opacity="0.8" />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type push:MarkPlanEntryActive}">
+        <nina:SequenceBlockView DataContext="{Binding}">
+            <nina:SequenceBlockView.SequenceItemContent>
+                <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource FocalePlanStatusContent}" />
+            </nina:SequenceBlockView.SequenceItemContent>
+        </nina:SequenceBlockView>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type push:MarkPlanEntryDone}">
+        <nina:SequenceBlockView DataContext="{Binding}">
+            <nina:SequenceBlockView.SequenceItemContent>
+                <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource FocalePlanStatusContent}" />
+            </nina:SequenceBlockView.SequenceItemContent>
+        </nina:SequenceBlockView>
+    </DataTemplate>
+    <DataTemplate x:Key="Focale.NINA.Plugin.Push.MarkPlanEntryActive_Mini">
+        <mini:MiniSequenceItem />
+    </DataTemplate>
+    <DataTemplate x:Key="Focale.NINA.Plugin.Push.MarkPlanEntryDone_Mini">
+        <mini:MiniSequenceItem />
     </DataTemplate>
 
 </ResourceDictionary>

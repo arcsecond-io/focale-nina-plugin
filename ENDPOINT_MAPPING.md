@@ -137,6 +137,15 @@ The lines are written in Focale's Tonight (PUT `/nightplans/<uuid>/exposures/<ta
 
 Per entry the plugin plans (`Push/TargetPlanner`): filters are matched by name in the active profile's filter wheel (case and punctuation aside, never guessed; unmatched lines are left out and shown); a target without fixed coordinates (a planet, a comet) cannot be added; an entry without lines keeps the template's exposures. Then it builds (`Push/NinaTargetBuilder`): the chosen template is cloned, its target set (name, J2000 coordinates, position angle), its Smart Exposures replaced by clones of the first one, one per line (filter, exposure time, binning, loop count), and `ISequenceMediator.AddAdvancedTarget` adds it. Gain and offset stay the template's.
 
+The way back: the built target starts with a `MarkPlanEntryActive` step and ends with a `MarkPlanEntryDone` step (`Push/PlanStatusItem`, Advanced Sequencer category "Focale"), each carrying the plan (`night_plan`) and entry (`uuid`) it reports on — steps a template carried over are replaced. When NINA runs them:
+
+```
+PATCH /nightplans/<plan_uuid>/observations/<entry_uuid>/   {"status": "active"}   → first step of the target
+PATCH /nightplans/<plan_uuid>/observations/<entry_uuid>/   {"status": "done"}     → last step
+```
+
+(`observingruns/views/observations.py`, `Observation.PlanStatus`: `active`, `done`, `skipped`; owner only, not plan-gated.) The step returns at once; `Push/PlanStatusReporter` sends in the background. It keeps only the latest status per entry, so a late `active` never overwrites a `done`; while offline, signed out or on a 401/408/425/429/5xx it waits and retries every minute (in memory, up to 18 hours; not across NINA restarts); any other 4xx (the entry or plan deleted, not the user's) drops it. The plugin never sets `skipped`.
+
 ## Equipment
 
 Equipment is auto-registered server-side from the FITS header on auto-ingest — `TELESCOP` becomes a `Telescope` row (with `TelescopeModel` linked when the resolver matches), `INSTRUME` becomes a `Camera` row (with `CameraModel`). The plugin itself does not POST to `/equipments/<type>/` endpoints.

@@ -166,7 +166,7 @@ public class AccountStoreTests {
     /// (and differs between NINA versions), so it is implemented with a proxy: any SetValue stores,
     /// TryGetValue&lt;T&gt; reads.
     /// </summary>
-    private static class FakePluginSettings {
+    internal static class FakePluginSettings {
         public static IPluginSettings Create() {
             var proxy = DispatchProxy.Create<IPluginSettings, Handler>();
             ((Handler)(object)proxy).Values = new Dictionary<(Guid, string), object?>();

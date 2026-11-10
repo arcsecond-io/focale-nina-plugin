@@ -10,7 +10,8 @@ namespace Focale.NINA.Plugin.Api;
 ///   Frames     — datasets.urls (DataFile, auto-ingest)
 ///   Storages   — xstorages.urls (DataStorage: the user's own storages, as upload destinations)
 ///   Events     — observingruns.urls (NightEvent, nested under the NightLog)
-///   Plans      — observingruns.urls (NightPlan and its exposure plan, read to build NINA targets)
+///   Plans      — observingruns.urls (NightPlan and its exposure plan, read to build NINA targets;
+///                each entry's status set as NINA runs its target)
 /// </summary>
 public static class FocaleEndpoints {
     // --- Auth (accounts/urls.py) ---
@@ -43,4 +44,7 @@ public static class FocaleEndpoints {
     public const string NightPlans         = "/nightplans/";
     /// <summary>GET: a night plan's entries with their exposure lines.</summary>
     public const string NightPlanExposures = "/nightplans/{0}/exposures/";
+    /// <summary>PATCH <c>{"status": "active"|"done"|"skipped"}</c>: one entry's progress through the night
+    /// (observingruns.views.observations; owner only, not plan-gated). {0} the plan, {1} the entry (an Observation).</summary>
+    public const string NightPlanEntry     = "/nightplans/{0}/observations/{1}/";
 }
